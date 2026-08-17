@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle identity. See the note in Apps/iOS/Sources/Info.plist: these
+         were supplied by XcodeGen's `info:` generation and went missing with
+         it. Absent, the app builds and then fails to install with a bare
+         `Missing bundle ID`. -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>VocalisBook</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+<!-- Export compliance, answered here so no upload has to ask.
+
+         False because the only encryption in this app is the system's: HTTPS to
+         a Plex server and to iCloud, both of which are exempt. Nothing here
+         implements or bundles cryptography — the one hash in the codebase is an
+         FNV cache key, which is not encryption and could not be used as any.
+
+         Without this key App Store Connect asks the question on every single
+         upload, and answering it by hand each time is how somebody eventually
+         answers it wrongly. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
+    <!-- Playback must survive the app going to the background; on a television
+         that is the normal case, not the exception. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <!-- CloudKit pushes its change notifications silently, and refuses to
+             without this — "BUG IN CLIENT OF CLOUDKIT: CloudKit push
+             notifications require the 'remote-notification' background mode".
+
+             Nothing here asks for or displays a notification. This is how the
+             sync engine is told there is something to fetch; without it, changes
+             from another device arrive only when the app next asks. -->
+        <string>remote-notification</string>
+    </array>
+
+    <!-- A homelab Plex server on the LAN is reached over plain HTTP more often
+         than not. Local addresses only; public hosts still require TLS. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>VocalisBook looks for your Plex server on this network so it can stream without going out to the internet.</string>
+</dict>
+</plist>

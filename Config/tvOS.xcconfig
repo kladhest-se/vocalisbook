@@ -1,0 +1,38 @@
+#include "Shared.xcconfig"
+
+TVOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 3
+ARCHS[sdk=appletvos*] = arm64
+
+// The 60pt overscan safe area is not optional. Nothing may be laid out against
+// the raw screen bounds.
+
+// Simulator builds target Apple Silicon only.
+//
+// A generic simulator destination builds every architecture, so half of each app
+// build was x86_64 that nothing here can run — and the publish check compiles
+// three apps, paying for it three times. The device slice above is already
+// arm64-only, and macOS is arm64-only by policy; this makes the simulators
+// match rather than being the one place that still builds Intel.
+ARCHS[sdk=appletvsimulator*] = arm64
+
+// The version people see, and the build behind it.
+//
+// `1.0.0`, and it stays there. App Store Connect wants a period-separated list
+// of at most three non-negative integers — no letters, no suffixes, no fourth
+// component — and it is the number a person reads back to you when something is
+// wrong, so it should mean a release rather than a moment.
+//
+// Not bumped per build. That is what the build number is for.
+//
+// One version per port, on purpose: they ship separately and there is no reason
+// the television's fixes should wait for the phone's. `CURRENT_PROJECT_VERSION`
+// is overridden by `make`, which keeps a counter per port in
+// `Apps/tvOS/build.number` and passes the next one in — so a build number
+// means "the nth build of this port on this machine" rather than something
+// derived from a clock or a commit.
+//
+// The 1 here is the fallback for a build started from Xcode rather than from
+// make. It is deliberately not a plausible number.
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1

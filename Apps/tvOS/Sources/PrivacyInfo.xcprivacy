@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- VocalisBook collects nothing and tracks nobody.
+
+	     Everything it knows lives on the listener's own Plex server and in
+	     their own iCloud account. There is no analytics, no crash reporter and
+	     no third-party SDK: the whole dependency list is GRDB, which is a
+	     database.
+
+	     The declarations below are the "required reason" APIs, which Apple
+	     requires an app to justify whether or not it collects anything. Each
+	     one here is the app reading its own files or its own settings. -->
+
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<!-- UserDefaults: the theme, the app icon, the skip interval, the
+			     sleep timer, whether iCloud sync is on. Settings this app
+			     wrote, read back by this app. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- File timestamps: the artwork cache reads access dates and sizes
+			     to decide what to evict when it is over its limit. A television
+			     downloads nothing, so that is the only reader here — the files
+			     are ones this app wrote inside its own container. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

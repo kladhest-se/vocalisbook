@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle identity.
+         
+         None of these were here, because they never had to be: XcodeGen's
+         `info:` key generates a plist and injects them, so the hand-written
+         file got away with omitting them right up until `info:` was replaced
+         with INFOPLIST_FILE to stop the generated file overwriting this one.
+         The build still succeeds without them — CFBundleIdentifier is not
+         needed to link an app, only to install or launch one — so the symptom
+         arrived as `Missing bundle ID` from the installer, three ports at once.
+         
+         PRODUCT_BUNDLE_IDENTIFIER comes from options.bundleIdPrefix in
+         project.yml; keeping the reference rather than a literal leaves one
+         source of truth for it. -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>VocalisBook</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+
+    <!-- Without this, playback stops the moment the screen locks, which is the
+         only way this app is ever actually used. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <!-- CloudKit pushes its change notifications silently, and refuses to
+             without this — "BUG IN CLIENT OF CLOUDKIT: CloudKit push
+             notifications require the 'remote-notification' background mode".
+
+             Nothing here asks for or displays a notification. This is how the
+             sync engine is told there is something to fetch; without it, changes
+             from another device arrive only when the app next asks. -->
+        <string>remote-notification</string>
+    </array>
+
+    <key>UILaunchScreen</key>
+    <dict/>
+    <!-- Both idioms, all four orientations — not a validator workaround but a
+         statement of what PlayerView already does. Its `wide`/`tall` switch
+         reflows for `verticalSizeClass == .compact` (a phone turned sideways)
+         and for `horizontalSizeClass == .regular` (any iPad orientation), so
+         the layout was already built for rotation on both idioms before this
+         key existed to say so.
+
+         Absent, this validated locally and ran fine in the simulator: the OS
+         defaults to permitting everything when the key is simply missing.
+         App Store Connect does not — it checks iPad multitasking specifically,
+         which is a stricter reader of the same silence, and only App Store
+         Connect refused the archive. The two device families get separate
+         keys because a phone and an iPad are asked about independently. -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+<!-- Export compliance, answered here so no upload has to ask.
+
+         False because the only encryption in this app is the system's: HTTPS to
+         a Plex server and to iCloud, both of which are exempt. Nothing here
+         implements or bundles cryptography — the one hash in the codebase is an
+         FNV cache key, which is not encryption and could not be used as any.
+
+         Without this key App Store Connect asks the question on every single
+         upload, and answering it by hand each time is how somebody eventually
+         answers it wrongly. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
+    <!-- A homelab Plex server on the LAN is reached over plain HTTP more often
+         than not. This permits it for local addresses only; public hosts still
+         require TLS. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+
+    <!-- Server discovery on the LAN triggers the local network prompt on
+         iOS 14+, and the prompt has no text unless this is set. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>VocalisBook looks for your Plex server on this network so it can stream without going out to the internet.</string>
+</dict>
+</plist>

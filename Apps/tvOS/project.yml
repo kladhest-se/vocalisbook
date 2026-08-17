@@ -1,0 +1,80 @@
+# XcodeGen spec for the tvOS app.
+#
+# Run `xcodegen` here, or `make tvos-project` from the repository root. The generated
+# .xcodeproj is gitignored — edit this file, not the project.
+
+name: VocalisBook
+options:
+  bundleIdPrefix: se.kladhest.vocalisbook
+  createIntermediateGroups: true
+  deploymentTarget:
+    tvOS: "17.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+packages:
+  PlexKit:
+    path: ../../Core/PlexKit
+  Audiobooks:
+    path: ../../Core/Audiobooks
+  Platform:
+    path: ../../Platform/tvOS
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
+
+targets:
+  VocalisBook:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Sources
+        excludes:
+          - Info.plist
+          # Referenced by CODE_SIGN_ENTITLEMENTS, not compiled or copied.
+          - VocalisBook.entitlements
+    dependencies:
+      - package: PlexKit
+      - package: Audiobooks
+      - package: Platform
+      - package: GRDB
+        product: GRDB
+    configFiles:
+      Debug: ../../Config/tvOS.xcconfig
+      Release: ../../Config/tvOS.xcconfig
+    settings:
+      ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+      INFOPLIST_FILE: Sources/Info.plist
+      # The checked-in entitlements, used as written — same trap as the plist.
+      #
+      # NOT XcodeGen's `entitlements:` key: that generates the file it points at,
+      # so a hand-written one is overwritten with an empty dict.
+      CODE_SIGN_ENTITLEMENTS: Sources/VocalisBook.entitlements
+
+  VocalisBookTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: VocalisBook
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  VocalisBook:
+    build:
+      targets:
+        VocalisBook: all
+        VocalisBookTests: [test]
+    test:
+      targets:
+        - VocalisBookTests
+      gatherCoverageData: false
+    run:
+      config: Debug
+
+# A Top Shelf extension surfacing Continue Listening is most of the value of a
+# TV app for very little work. Add it as a second target when this one runs.

@@ -1,0 +1,53 @@
+#include "Shared.xcconfig"
+
+MACOSX_DEPLOYMENT_TARGET = 14.0
+
+// Apple Silicon only. Halves build time and binary size, and means no build
+// machine ever needs Rosetta. The cost is Intel Macs still on Sonoma, which for
+// a self-hosted Plex audiobook client is not a population worth carrying a
+// universal binary for.
+ARCHS = arm64
+EXCLUDED_ARCHS[sdk=macosx*] = x86_64
+ONLY_ACTIVE_ARCH[config=Debug] = YES
+
+ENABLE_HARDENED_RUNTIME = YES
+
+// The sandbox, and the one hole it needs.
+//
+// These two must move together. ENABLE_APP_SANDBOX on its own produces an app
+// that cannot open a socket: every request fails, and the only symptom is a
+// transport error at sign-in with nothing to say why. The app makes outgoing
+// connections and nothing else — it never listens, and never touches a file
+// outside its container.
+//
+// Declared here rather than in a checked-in .entitlements file so there is one
+// source of truth. XcodeGen generates the file its `entitlements:` key points
+// at, which silently replaced a hand-written one and caused exactly the failure
+// above.
+ENABLE_APP_SANDBOX = YES
+ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES
+// Outgoing connections only — the app never listens.
+// com.apple.security.network.client = YES in the entitlements file.
+
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+// The version people see, and the build behind it.
+//
+// `1.0.0`, and it stays there. App Store Connect wants a period-separated list
+// of at most three non-negative integers — no letters, no suffixes, no fourth
+// component — and it is the number a person reads back to you when something is
+// wrong, so it should mean a release rather than a moment.
+//
+// Not bumped per build. That is what the build number is for.
+//
+// One version per port, on purpose: they ship separately and there is no reason
+// the television's fixes should wait for the phone's. `CURRENT_PROJECT_VERSION`
+// is overridden by `make`, which keeps a counter per port in
+// `Apps/macOS/build.number` and passes the next one in — so a build number
+// means "the nth build of this port on this machine" rather than something
+// derived from a clock or a commit.
+//
+// The 1 here is the fallback for a build started from Xcode rather than from
+// make. It is deliberately not a plausible number.
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1

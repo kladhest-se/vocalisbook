@@ -1,0 +1,95 @@
+# XcodeGen spec for the iOS app.
+#
+# Copy to vocalisbook-ios/App/project.yml, then run `xcodegen` from that
+# directory. The .xcodeproj is generated and gitignored — do not commit it.
+
+name: VocalisBook
+options:
+  bundleIdPrefix: se.kladhest.vocalisbook
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+packages:
+  PlexKit:
+    path: ../../Core/PlexKit
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
+  Audiobooks:
+    path: ../../Core/Audiobooks
+  Platform:
+    path: ../../Platform/iOS
+
+targets:
+  VocalisBook:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        excludes:
+          - Info.plist
+          # Referenced by CODE_SIGN_ENTITLEMENTS, not compiled or copied.
+          - VocalisBook.entitlements
+    dependencies:
+      - package: PlexKit
+      - package: Audiobooks
+      - package: Platform
+      - package: GRDB
+        product: GRDB
+    settings:
+      # The checked-in Info.plist, used as written.
+      #
+      # NOT XcodeGen's `info:` key: that *generates* the file it points at, so
+      # the hand-written one was overwritten on every `xcodegen` run and every
+      # key in it silently disappeared. On iOS that meant no UILaunchScreen,
+      # which makes iOS run the app letterboxed in compatibility mode — the app
+      # sat in a band with black above and below no matter what the views did.
+      # It also meant no UIBackgroundModes, so audio stopped on lock.
+      #
+      # Exactly the same trap as `entitlements:`, found and fixed there, and not
+      # checked for here.
+      INFOPLIST_FILE: Sources/Info.plist
+      # The checked-in entitlements, used as written — same trap as the plist.
+      #
+      # NOT XcodeGen's `entitlements:` key: that generates the file it points at,
+      # so a hand-written one is overwritten with an empty dict.
+      CODE_SIGN_ENTITLEMENTS: Sources/VocalisBook.entitlements
+    configFiles:
+      Debug: ../../Config/iOS.xcconfig
+      Release: ../../Config/iOS.xcconfig
+    # Info.plist is checked in at Sources/Info.plist rather than generated
+    # here — the local-network and ATS keys need comments explaining why a
+    # homelab server on plain HTTP is permitted, and generated plists lose them.
+
+  # Without a test target the generated scheme has no test action, and
+  # `xcodebuild test` fails with "Scheme VocalisBook is not currently configured
+  # for the test action" - which reads like a broken app and is not.
+  VocalisBookTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: VocalisBook
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+
+# Declared explicitly rather than left to XcodeGen's default, so the test action
+# is part of the checked-in spec and cannot quietly go missing again.
+schemes:
+  VocalisBook:
+    build:
+      targets:
+        VocalisBook: all
+        VocalisBookTests: [test]
+    test:
+      targets:
+        - VocalisBookTests
+      gatherCoverageData: false
+    run:
+      config: Debug

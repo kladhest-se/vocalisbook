@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle identity. See the note in Apps/iOS/Sources/Info.plist: these
+         were supplied by XcodeGen's `info:` generation and went missing with
+         it.
+         
+         macOS fails harder than the simulators do. The app builds, installs
+         nowhere, and dies during dyld initialisation before a line of our code
+         runs — libsystem_secinit sets up the sandbox container, cannot read
+         kCFBundleIdentifierKey out of the signed Info.plist, and traps:
+         
+           Unable to get bundle identifier because Info.plist from code
+           signature information has no value for kCFBundleIdentifierKey
+         
+         Which reads as a code-signing or sandbox fault and is neither. The
+         sandbox is only the first thing to ask for the identifier. -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- The app icon, named rather than assumed.
+         
+         Third instance of the generated-plist gap. `GENERATE_INFOPLIST_FILE`
+         injects this from ASSETCATALOG_COMPILER_APPICON_NAME; a checked-in
+         plist gets nothing, and an app bundle that never names its icon shows
+         the generic one however correct the catalog is. The value must match
+         ASSETCATALOG_COMPILER_APPICON_NAME in Config/macOS.xcconfig, which
+         layout.sh now checks. -->
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+
+    <!-- AppKit's entry point. SwiftUI's App lifecycle installs its own
+         NSApplication, so this is not what starts the app — but LaunchServices
+         reads it to decide the bundle is a launchable GUI application at all,
+         and an app bundle without it is not one. -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>VocalisBook</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <!-- No `UIBackgroundModes` here: that key is iOS and tvOS only.
+         A Mac app receives CloudKit's silent pushes while it is running without
+         declaring anything, and it is not suspended the way a phone app is —
+         so the mode the other two need has no counterpart to add. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <!-- Export compliance, answered here so no upload has to ask.
+
+         False because the only encryption in this app is the system's: HTTPS to
+         a Plex server and to iCloud, both of which are exempt. Nothing here
+         implements or bundles cryptography — the one hash in the codebase is an
+         FNV cache key, which is not encryption and could not be used as any.
+
+         Without this key App Store Connect asks the question on every single
+         upload, and answering it by hand each time is how somebody eventually
+         answers it wrongly. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
+    <!-- Shown in the Mac's About panel, which is empty without it.
+         The same name `AppIdentity.author` carries; there is no way to read a
+         Swift constant from a plist, so the two are written down twice and
+         `layout.sh` holds them to each other. -->
+    <!-- The Mac App Store's category, which it asks for and does not guess.
+
+         Music rather than Entertainment or Productivity: this plays audiobooks,
+         and Apple files audiobook players under Music alongside podcast clients.
+         App Store Connect lets you change it later; having it here means the
+         upload arrives already answered. -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>© Tommy Frössman</string>
+
+    <!-- A homelab Plex server on the LAN is reached over plain HTTP more often
+         than not. This permits it for local addresses only; public hosts still
+         require TLS. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+
+    <!-- Server discovery on the LAN triggers the local network prompt, and the
+         prompt has no text unless this is set. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>VocalisBook looks for your Plex server on this network so it can stream without going out to the internet.</string>
+</dict>
+</plist>

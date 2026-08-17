@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The push capability, without which the registration fails.
+
+	     `CKSyncEngine` learns that another device changed something from a
+	     silent push, and asking for those needs three things: this key, the
+	     `remote-notification` background mode, and the call to
+	     `registerForRemoteNotifications()`. The code had the last two and not
+	     this one, so registration failed at launch and no push has ever
+	     arrived — sync has been running entirely on its own poll, which is
+	     why it worked at all and why it was never instant.
+
+	     `development` here, and Xcode rewrites it to `production` when it
+	     signs a distribution build. Writing `production` by hand breaks every
+	     development build instead, which is the more common mistake and the
+	     harder one to notice. -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- CloudKit, for the data Plex cannot hold.
+	     Bookmarks, listening history and per-book speed have nowhere to live
+	     but the device and iCloud: Plex has no third-party user-data API. -->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.se.kladhest.vocalisbook</string>
+	</array>
+</dict>
+</plist>
