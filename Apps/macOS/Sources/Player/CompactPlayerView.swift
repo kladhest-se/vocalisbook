@@ -15,7 +15,18 @@ import PlatformShared
 /// and the expand button just resizes the window.
 /// The four sizes `CompactPlayerView`'s content can be, smallest to largest —
 /// see the comment inside `body` for what each one shows and why.
-private enum Tier: Int, Comparable, Hashable, CaseIterable {
+///
+/// Purely static, deliberately, after a measurement-based version that tried
+/// to self-correct at runtime instead: it added a real, unexplained failure
+/// of its own — a debug overlay meant to show exactly this decision stopped
+/// rendering at all at one reported size, in the same build where it worked
+/// correctly at two others, with no code path that should have let that
+/// happen. Something in that mechanism's state or render timing was wrong in
+/// a way reading the code again was not finding. A plain, generously-padded
+/// threshold is easier to be sure of than a cleverer system that has already
+/// shown it can fail silently, and that is worth more at this point than
+/// squeezing out the last few points of window size.
+private enum Tier: Int, Comparable {
     case artOnly = 0
     case withProgress = 1
     case withControls = 2
@@ -23,46 +34,30 @@ private enum Tier: Int, Comparable, Hashable, CaseIterable {
 
     static func < (lhs: Tier, rhs: Tier) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    /// Thresholds worked out from element heights, not guessed a second time.
-    ///
-    /// The first attempt at these numbers (220/340/460) only ever scaled the
-    /// cover — everything else in a tier's content is fixed height, and as
-    /// the window shrank toward the *bottom* of a tier's own range, that
-    /// fixed content increasingly did not fit in what was left over. Checked
-    /// in Python against rough element heights this time: `withProgress`
-    /// needs about 225pt for a legible cover, `withControls` about 361,
-    /// `full` about 517. These thresholds are each comfortably above the
-    /// corresponding number, but the estimates themselves are still just
-    /// that — font sizes and control heights guessed from their SwiftUI
-    /// modifiers, not measured against a running app.
+    /// Margins roughly doubled from the previous, measurement-backed
+    /// attempt — 225/361/517 were the computed minimums that attempt
+    /// found, and this round assumes those numbers, or the assumptions
+    /// behind them, are still missing something rather than trusting them
+    /// again at a tighter margin.
     init(height: CGFloat) {
         switch height {
-        case ...240: self = .artOnly
-        case ...380: self = .withProgress
-        case ...540: self = .withControls
+        case ...260: self = .artOnly
+        case ...420: self = .withProgress
+        case ...600: self = .withControls
         default: self = .full
         }
     }
 
-    /// The same idea, sideways — and the one this file was missing entirely
-    /// until a narrow-but-tall window exposed it. Every threshold above was
-    /// chosen against *height* alone, so a window dragged narrow while
-    /// staying reasonably tall could compute `withControls` or `full` from
-    /// its height and try to fit a six-button transport row into whatever
-    /// width happened to be left — which is the cover, the scrubber and the
-    /// titles all being cropped or squeezed in the screenshots this was
-    /// reported against. `body` takes the smaller of this and the
-    /// height-based tier, so either dimension being too small is enough to
-    /// drop a level, and both have to agree before a tier is allowed to grow.
-    ///
-    /// Checked in Python again rather than guessed: the transport row's six
-    /// items and five gaps alone need about 316pt including padding, which
-    /// is comfortably under `withControls`'s threshold here.
+    /// The same idea, sideways — a window dragged narrow while staying
+    /// reasonably tall needs this as well as the height check, or it can
+    /// compute a tier from height alone and try to fit a six-button
+    /// transport row into whatever width is actually left. 316pt was the
+    /// computed minimum for that row; 440 is the padded threshold here.
     init(width: CGFloat) {
         switch width {
-        case ...190: self = .artOnly
-        case ...260: self = .withProgress
-        case ...360: self = .withControls
+        case ...210: self = .artOnly
+        case ...300: self = .withProgress
+        case ...440: self = .withControls
         default: self = .full
         }
     }
@@ -86,49 +81,11 @@ struct CompactPlayerView: View {
     @Environment(\.theme) private var theme
     @State private var scrubbing: Double?
 
-    /// Heights at which a tier's own content has actually been measured to
-    /// overflow what was available, keyed per tier.
-    ///
-    /// Twice now, thresholds worked out by estimating element heights turned
-    /// out wrong once actually reported against — a scrollbar, a font
-    /// rendering taller than its point size, spacing added somewhere this
-    /// was not accounted for, something. Guessing a third set of numbers is
-    /// the same mistake in the same shape. This measures what SwiftUI itself
-    /// says the content needs, after it renders, and steps a tier down
-    /// whenever that measurement says the size-based guess did not fit —
-    /// correct regardless of how accurate the guess is, which no threshold
-    /// chosen ahead of time can promise.
-    @State private var overflowThresholds: [Tier: CGFloat] = [:]
-
-    private func recordIfOverflowing(tier: Tier, contentHeight: CGFloat, availableHeight: CGFloat) {
-        guard contentHeight > availableHeight else { return }
-        // Only raise the recorded threshold, never lower it — a single
-        // narrow measurement during a resize should not permanently lock a
-        // tier out at a height where it actually fits.
-        let existing = overflowThresholds[tier] ?? 0
-        if availableHeight > existing {
-            overflowThresholds[tier] = availableHeight
-        }
-    }
-
-    /// The size-based guess, stepped down through any tiers already known,
-    /// at this height, not to fit.
-    ///
-    /// A plain function rather than inline in `body`: the `while` loop that
-    /// does the stepping cannot live inside `GeometryReader`'s trailing
-    /// closure. `@ViewBuilder` transforms `if`, `switch` and `for`-`in` into
-    /// view content and nothing else — a `while` is not a view-construction
-    /// statement it has a transform for, and the closure fails to compile
-    /// rather than doing something unexpected with it. Computing the value
-    /// here and handing back a plain `Tier` is what makes it usable from a
-    /// `let` inside that closure at all.
+    /// The smaller of the width-based and height-based guess — either
+    /// dimension being too small for a tier's content is enough to drop a
+    /// level, and both have to agree before it grows back.
     private func resolvedTier(height: CGFloat, width: CGFloat) -> Tier {
-        let sizeTier = min(Tier(height: height), Tier(width: width))
-        var tier = sizeTier
-        while let overflowAt = overflowThresholds[tier], height <= overflowAt, tier != .artOnly {
-            tier = Tier(rawValue: tier.rawValue - 1)!
-        }
-        return tier
+        min(Tier(height: height), Tier(width: width))
     }
 
     var body: some View {
@@ -158,19 +115,9 @@ struct CompactPlayerView: View {
                 // stays legible for as long as there is room for it.
                 GeometryReader { geometry in
                 let height = geometry.size.height
-                // The size-based guess, stepped down through any tiers
-                // already measured, at this height or smaller, not to
-                // actually fit. See `overflowThresholds` for why a
-                // measurement rather than a better guess, and
-                // `resolvedTier(height:width:)` for why the loop that walks
-                // the guess down lives in a plain function rather than here:
-                // `@ViewBuilder` transforms `if`, `switch` and `for`-`in`,
-                // and nothing else — a `while` loop inside its closure is not
-                // a view-construction statement it knows how to handle, and
-                // fails to compile rather than doing something unexpected.
                 let tier = resolvedTier(height: height, width: geometry.size.width)
 
-                Group {
+                ZStack(alignment: .topLeading) {
                 if tier == .artOnly {
                     // The full content area, not the full window — `header`
                     // stays above this regardless of tier, deliberately.
@@ -199,70 +146,40 @@ struct CompactPlayerView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
-                            VStack(spacing: 16) {
-                                // Tapping the cover toggles play and pause at
-                                // every tier smaller than full — there is
-                                // nowhere else to aim at `withProgress`, and
-                                // losing the gesture the moment a transport
-                                // appears at `withControls` would be a
-                                // control that quietly stops working rather
-                                // than one that was never offered.
-                                cover
-                                    .frame(maxHeight: max(64, height * tier.coverFraction))
-                                    .contentShape(.rect)
-                                    .onTapGesture {
-                                        if tier != .full { app.togglePlayPauseRespectingOffline() }
-                                    }
-                                scrubber
+                            // Tapping the cover toggles play and pause at
+                            // every tier smaller than full — there is
+                            // nowhere else to aim at `withProgress`, and
+                            // losing the gesture the moment a transport
+                            // appears at `withControls` would be a
+                            // control that quietly stops working rather
+                            // than one that was never offered.
+                            cover
+                                .frame(maxHeight: max(64, height * tier.coverFraction))
+                                .contentShape(.rect)
+                                .onTapGesture {
+                                    if tier != .full { app.togglePlayPauseRespectingOffline() }
+                                }
+                            scrubber
 
-                                if tier == .withProgress {
-                                    // The book's own title only — not the
-                                    // chapter, not the author, both of which
-                                    // `titles` shows from `withControls` up. One
-                                    // line is what is left once the question
-                                    // this asks is "what am I listening to", not
-                                    // "where exactly am I in it".
-                                    Text(app.nowPlayingTitle ?? "")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(theme.text)
-                                        .lineLimit(1)
-                                        .multilineTextAlignment(.center)
-                                } else {
-                                    titles
-                                    transport
-                                    if tier == .full {
-                                        secondary
-                                    }
+                            if tier == .withProgress {
+                                // The book's own title only — not the
+                                // chapter, not the author, both of which
+                                // `titles` shows from `withControls` up. One
+                                // line is what is left once the question
+                                // this asks is "what am I listening to", not
+                                // "where exactly am I in it".
+                                Text(app.nowPlayingTitle ?? "")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                titles
+                                transport
+                                if tier == .full {
+                                    secondary
                                 }
                             }
-                            // Measured against the space actually available
-                            // to it — `height` minus the bottom padding this
-                            // whole `VStack` carries, which the inner one does
-                            // not see on its own. Chapters is deliberately
-                            // outside this measurement: it already has its own
-                            // gate at 640pt and scrolls within whatever room is
-                            // left, so a long chapter list should not be able
-                            // to make the core content think it needs to drop
-                            // a tier it would otherwise fit at.
-                            .background(
-                                GeometryReader { contentProxy in
-                                    Color.clear
-                                        .onAppear {
-                                            recordIfOverflowing(
-                                                tier: tier,
-                                                contentHeight: contentProxy.size.height,
-                                                availableHeight: height - 18
-                                            )
-                                        }
-                                        .onChange(of: contentProxy.size.height) { _, newHeight in
-                                            recordIfOverflowing(
-                                                tier: tier,
-                                                contentHeight: newHeight,
-                                                availableHeight: height - 18
-                                            )
-                                        }
-                                }
-                            )
 
                             // Chapters need the most room, and give it up
                             // first — the last thing added going up, and the
@@ -275,37 +192,17 @@ struct CompactPlayerView: View {
                         .padding(.bottom, 18)
                     }
                 }
-                }
-                // Temporary, and deliberately loud about it: this feature has
-                // gone through several rounds where the only feedback
-                // available was a screenshot after the fact, with no way to
-                // tell whether a report meant the wrong tier was chosen or
-                // the right tier still did not fit. This makes both
-                // questions answerable directly — the live width, height and
-                // chosen tier, plus which tiers have been measured to
-                // overflow at some height and what that height was. Remove
-                // once the tier system has actually been confirmed correct
-                // against a running app rather than reasoned about from
-                // outside one.
                 #if DEBUG
-                .overlay(alignment: .topLeading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(Int(geometry.size.width))×\(Int(height)) → \(tier)")
-                        ForEach(Tier.allCases, id: \.self) { candidate in
-                            if let recorded = overflowThresholds[candidate] {
-                                Text("\(candidate) overflows ≤\(Int(recorded))")
-                            }
-                        }
-                    }
+                Text("\(Int(geometry.size.width))×\(Int(height)) → \(tier)")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white)
                     .padding(4)
                     .background(.black.opacity(0.65), in: .rect(cornerRadius: 4))
                     .padding(4)
                     .allowsHitTesting(false)
-                }
                 #endif
             }
+        }
         }
         }
         .background(theme.background.ignoresSafeArea())
@@ -354,17 +251,8 @@ struct CompactPlayerView: View {
         // exact mechanism turns out to be, re-asserting compact chrome at
         // the one moment content meaningfully changes shape is cheap and
         // cannot make an already-correct title bar wrong.
-        //
-        // The same change is also why `overflowThresholds` is cleared here:
-        // it records "this tier's content did not fit at this height", and
-        // that answer depends on the book playing — a longer title measures
-        // taller than a shorter one — not on the window height alone. Left
-        // in place across a book change, a threshold recorded against a long
-        // title could keep a tier locked out for a short one that would now
-        // fit comfortably.
         .onChange(of: app.player.bookRatingKey) { _, _ in
             WindowSizer.applyChromeWhenReady(compact: true)
-            overflowThresholds = [:]
         }
     }
 
