@@ -89,8 +89,29 @@ struct CompactPlayerView: View {
     }
 
     var body: some View {
+        GeometryReader { outerGeometry in
+        // Decided once, against the full window before `header` has taken
+        // any space of its own — the inner tier computation further down
+        // measures whatever's left *after* `header`, which is exactly right
+        // for every tier that keeps the header, but cannot be used for this
+        // decision, since header's own presence is what it would be
+        // measuring around.
+        //
+        // Hiding it only at the smallest tier, not withdrawing the earlier
+        // reasoning that it should stay: traffic lights are hidden
+        // throughout the compact player, so this row's close button was the
+        // only way to close the window without a keyboard shortcut. That
+        // tradeoff was made deliberately once already and is being made the
+        // other way now, on request, not by accident — ⌘W still closes the
+        // window regardless, and growing the window even slightly brings
+        // the header back.
+        let hidesHeader = app.player.bookRatingKey != nil
+            && resolvedTier(height: outerGeometry.size.height, width: outerGeometry.size.width) == .artOnly
+
         VStack(spacing: 0) {
-            header
+            if !hidesHeader {
+                header
+            }
 
             if app.player.bookRatingKey == nil {
                 nothingPlaying
@@ -131,16 +152,26 @@ struct CompactPlayerView: View {
                 // label both frozen at "380×446" while the real window kept
                 // shrinking past it, and the cropping that went with it —
                 // all one symptom, not three.
-                ZStack(alignment: .topLeading) {
+                //
+                // `Group` rather than `ZStack`: this only ever needed to
+                // overlay two things while a debug label sat here alongside
+                // the real content; now that the label is gone, there is
+                // only the one child left to wrap.
+                Group {
                 if tier == .artOnly {
-                    // The full content area, not the full window — `header`
-                    // stays above this regardless of tier, deliberately.
-                    // Traffic lights are hidden throughout the compact
-                    // player, so that row's close button is the only way to
-                    // close the window without a keyboard shortcut; losing
-                    // it at exactly the smallest size, where the window is
-                    // easiest to lose track of, would trade one convenience
-                    // for a real one.
+                    // The full content area, and — since `body`'s outer
+                    // `hidesHeader` check already suppressed `header` at
+                    // this exact tier — the full window, edge to edge.
+                    //
+                    // That header-hiding decision used to go the other way,
+                    // on purpose: with traffic lights hidden throughout the
+                    // compact player, the header's close button was the
+                    // only way to close the window without a keyboard
+                    // shortcut, and losing it at the smallest size felt like
+                    // trading one convenience for a real one. Changed on
+                    // request, not by accident — ⌘W still closes the window
+                    // regardless, and growing the window even slightly
+                    // brings the header straight back.
                     //
                     // No padding — the whole available rect is handed
                     // straight to `CoverImage`. `contentMode: .fit` rather
@@ -206,46 +237,25 @@ struct CompactPlayerView: View {
                         .padding(.bottom, 18)
                     }
                 }
-                #if DEBUG
-                // Constrained to the window's own width before anything
-                // else, and centered within it — moved here after the
-                // previous placement turned out to be able to extend past
-                // the actual window edge at narrow widths, with nothing
-                // wrapping or clipping it back in. A monospaced string this
-                // long has no reason to fit inside 140pt just because it
-                // fit inside 400; the frame here is what makes that true
-                // regardless of how narrow the window gets, and is very
-                // possibly the mundane explanation for why this looked like
-                // it had vanished entirely at one reported size rather than
-                // merely rendered somewhere off-window.
-                Text("\(Int(geometry.size.width))×\(Int(height)) → \(tier)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .padding(4)
-                    .background(.black.opacity(0.65), in: .rect(cornerRadius: 4))
-                    .frame(maxWidth: geometry.size.width - 16)
-                    .frame(width: geometry.size.width, height: height, alignment: .center)
-                    .allowsHitTesting(false)
-                #endif
             }
             .frame(width: geometry.size.width, height: height)
         }
         }
         }
-        // Forces this VStack to report back exactly the size it was
-        // offered, rather than the summed natural height of `header` plus
-        // whatever its own content wants — which is the same unpinned-frame
-        // gap already found and fixed at two levels further out, one level
+        }
+        // Forces this to report back exactly the size it was offered,
+        // rather than the summed natural height of `header` plus whatever
+        // its own content wants — which is the same unpinned-frame gap
+        // already found and fixed at two levels further out, one level
         // deeper still. The debug label kept reporting a fixed height
         // across three visibly different window sizes while its width
-        // varied correctly, which is exactly the signature: VStack sums
-        // height from its children rather than reading it from its parent,
-        // so a missing pin here shows up as height specifically freezing
-        // while width, governed differently, kept tracking. `maxWidth`
-        // alongside it for the same reason, even though width was not the
-        // one observed to be wrong — nothing here should be trusted to
-        // self-report correctly anymore without being told to.
+        // varied correctly, which is exactly the signature: a `VStack`
+        // sums height from its children rather than reading it from its
+        // parent, so a missing pin here shows up as height specifically
+        // freezing while width, governed differently, kept tracking.
+        // `maxWidth` alongside it for the same reason, even though width
+        // was not the one observed to be wrong — nothing here should be
+        // trusted to self-report correctly anymore without being told to.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.background.ignoresSafeArea())
         // A thin border, because the chrome is gone.
