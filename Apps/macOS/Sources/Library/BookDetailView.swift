@@ -22,8 +22,21 @@ struct BookDetailView: View {
                         if let author = model.book?.author {
                             Text(author).font(.title3).foregroundStyle(.secondary)
                         }
+                        // Co-authors: the primary author above is Plex's own
+                        // artist link, one name only. A book credited to two
+                        // or three writers has the rest in `Mood`, parsed
+                        // already into `credits.authors` and modeled all the
+                        // way through — narrators and series read from the
+                        // same place and were already shown here; this was
+                        // the one field of the three that never made it into
+                        // any screen despite being fully available.
+                        if !model.credits.authors.isEmpty {
+                            Text("With \(model.credits.authors.joined(separator: ", "))")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
                         // Narrator and series: Plex has no field for either, so
-                        // SpokenMeta puts them in Style and Mood.
+                        // VocalisMeta puts them in Style and Mood.
                         if !model.credits.narrators.isEmpty {
                             Text("Read by \(model.credits.narrators.joined(separator: ", "))")
                                 .font(.callout)
@@ -242,7 +255,7 @@ final class BookDetailModel {
     private(set) var book: BookRecord?
     private(set) var timeline: CachedTimeline?
 
-    /// Narrators, co-authors and series, from the tags SpokenMeta writes.
+    /// Narrators, co-authors and series, from the tags VocalisMeta writes.
     ///
     /// Plex has no field for a narrator, so the agent puts them in `Style` and
     /// authors and series in `Mood`. Read from the cache rather than the

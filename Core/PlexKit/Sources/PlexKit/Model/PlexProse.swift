@@ -72,7 +72,7 @@ public enum PlexProse {
     /// byte pair becomes two separate characters — `ä` arrives as `Ã¤`, `í`
     /// as `Ã` followed by a soft hyphen that most renderers draw as nothing,
     /// which is why the damage often reads as a single stray `Ã` rather than
-    /// two visible characters. SpokenMeta and Plex's own agents are not
+    /// two visible characters. VocalisMeta and Plex's own agents are not
     /// consistent about the encoding they write metadata in, and this arrives
     /// already broken in the API response — nothing this app's own transport
     /// does causes it, and nothing here can ask Plex to store it correctly.

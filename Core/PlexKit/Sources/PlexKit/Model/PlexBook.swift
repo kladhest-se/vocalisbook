@@ -44,7 +44,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
 
     /// Narrators.
     ///
-    /// Plex's music schema has no field for one, so SpokenMeta puts them in
+    /// Plex's music schema has no field for one, so VocalisMeta puts them in
     /// `Style` — which for music means a sub-genre and for an audiobook library
     /// means the person reading. Documented in that agent's "Metadata mapping
     /// for player apps": Style is narrators, and readers of a LibriVox project
@@ -171,7 +171,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         self.studio = c.plexString(.studio).map(PlexProse.repairingMojibake)
         // Attribute or child, because Plex builds differ.
         //
-        // The contract says to support both and to prefer the SpokenMeta one:
+        // The contract says to support both and to prefer the VocalisMeta one:
         // an album can carry several — a legacy agent's, a Plex Music one — and
         // taking the first would be a coin toss on which server answered.
         let attribute = c.plexString(.guid)

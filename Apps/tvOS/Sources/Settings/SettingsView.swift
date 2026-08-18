@@ -261,73 +261,120 @@ struct SettingsRow<Destination: View>: View {
 
 }
 
+/// Themes as swatches rather than a list of names, matching the grid iOS
+/// already uses — a colour scheme is the one setting where the preview *is*
+/// the description, and a single accent-coloured chip beside a name was
+/// never that.
+///
+/// This replaces a flat list whose rows filled solid pink regardless of
+/// which theme they represented, `Button` plus `.buttonStyle(.plain)`
+/// notwithstanding. The exact mechanism was never fully pinned down against
+/// a running app, but the leading theory is tvOS falling back to a system
+/// default tint for an unfocused button's background when nothing on the
+/// label itself supplies an explicit one — plausible given every row showed
+/// the identical colour independent of theme, which an app-controlled fill
+/// could not produce. Rather than chase that further, this sidesteps the
+/// ambiguity structurally: every swatch below paints its own background,
+/// surface, text and accent colours explicitly, from the theme it
+/// represents, leaving nothing for a system default to fill in.
 struct ThemeChooser: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-
-    /// Which row has focus, so its text can be readable against the system's
-    /// white focus background. `@FocusState` on a value rather than a `Bool`,
-    /// because there is one of these for the whole list.
     @FocusState private var focusedOption: ThemeSelection?
-    @Environment(\.theme) private var theme
+
+    private let columns = [GridItem(.adaptive(minimum: 340, maximum: 420), spacing: 28)]
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                Text("Theme").font(.system(size: 48, weight: .semibold))
-                // One list. "Match system" and the after-dark switch are entries
-                // in it rather than a separate mode.
+            Text("Theme").font(.system(size: 48, weight: .semibold))
+                .padding(.bottom, 24)
+
+            LazyVGrid(columns: columns, spacing: 28) {
                 ForEach(ThemeSelection.all, id: \.self) { option in
                     Button {
                         app.themes.selection = option
                         dismiss()
                     } label: {
-                        HStack(spacing: 16) {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(option.previewTheme.accent)
-                                .frame(width: 44, height: 28)
-                            VStack(alignment: .leading) {
-                                Text(option.title)
-                                    .foregroundStyle(
-                                        focusedOption == option ? FocusedRow.text : theme.text
-                                    )
-                                Text(option.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(
-                                        focusedOption == option
-                                            ? FocusedRow.dimText : theme.secondaryText
-                                    )
-                            }
-                            Spacer()
-                            if option == app.themes.selection {
-                                // The tick, in a colour that survives the focus
-                                // background: an accent chosen to sit on a dark
-                                // theme disappears on white.
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(
-                                        focusedOption == option ? FocusedRow.text : theme.accent
-                                    )
-                            }
-                        }
-                        .frame(maxWidth: 700)
-                        .padding(.vertical, 8)
+                        ThemeSwatch(
+                            option: option,
+                            isSelected: option == app.themes.selection
+                        )
                     }
-                    // Without this, tvOS applies its default button style, which
-                    // fills every row with the *current* theme's accent. Eight
-                    // rows all filled read as eight selections, and the tick
-                    // marking the real one is then accent on accent — invisible.
-                    // `SettingsRow` is plain for the same reason; these rows sit
-                    // one screen away from those and should look like them.
-                    //
-                    // Not a rule for the whole app: the player's transport and
-                    // the sign-in pickers want the filled style, because there
-                    // a button should look like a button.
+                    // tvOS already lifts and scales a focused `.plain`
+                    // button on its own — nothing extra needed here for
+                    // that. `ThemeSwatch` handles the selection ring itself.
                     .buttonStyle(.plain)
                     .focused($focusedOption, equals: option)
                 }
             }
+            .padding(.horizontal, 60)
             .padding(.vertical, 40)
         }
+    }
+}
+
+/// One theme, previewed at roughly the proportions it appears on screen:
+/// page, surface, text, accent — not just its accent colour standing in for
+/// the whole thing.
+///
+/// A tvOS-sized copy of iOS's own `ThemeSwatch` rather than a shared type:
+/// the two apps' `SettingsView.swift` are separate targets, and the sizing
+/// a 10-foot UI wants — a 340–420pt tile instead of a 150–220pt one, larger
+/// text, a heavier selection ring — is different enough that sharing the
+/// view would mean threading size constants through it regardless.
+struct ThemeSwatch: View {
+    let option: ThemeSelection
+    let isSelected: Bool
+
+    /// The automatic entries preview what they will most often look like
+    /// rather than showing an empty tile.
+    private var theme: Theme { option.previewTheme }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.text)
+                    .frame(width: 120, height: 12)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.secondaryText)
+                    .frame(width: 80, height: 10)
+                Spacer(minLength: 0)
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(height: 24)
+            }
+            .padding(20)
+            .frame(height: 140)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.surface)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(option.title)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(theme.accent)
+                    }
+                }
+                Text(option.subtitle)
+                    .font(.system(size: 18))
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.background)
+        }
+        .clipShape(.rect(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? theme.accent : .clear, lineWidth: 3)
+        )
     }
 }
 

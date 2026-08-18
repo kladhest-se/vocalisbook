@@ -92,7 +92,7 @@ the other, and that is the failure an audiobook player is least forgiven for.
 **A book travels under its own identity, not its rating key.** A rating key is a
 row number in one server's database, so the same audiobook on a second server is
 a different number — and progress keyed on it would not follow. Where the
-[SpokenMeta](https://github.com/kladhest-se/SpokenMeta) agent has matched a book,
+[VocalisMeta](https://github.com/kladhest-se/vocalismeta) agent has matched a book,
 its Audible or LibriVox identity is what iCloud records, and the same book is the
 same book anywhere. Books nothing has matched fall back to server-plus-rating-key,
 which is honest about how far it can travel.
@@ -333,13 +333,19 @@ not committed. Edit the `project.yml`, never the `.xcodeproj`.
 
 ## Metadata
 
-Built against [SpokenMeta](https://github.com/kladhest-se/SpokenMeta) and its
-Client Identity Contract v1 (`CLIENT_INTEGRATION.md` in that repository).
+Built against [VocalisMeta](https://github.com/kladhest-se/vocalismeta) and its
+Client Identity Contract v1 (`CLIENT_INTEGRATION.md` in that repository) — renamed
+from SpokenMeta without a wire-contract change, so every `spokenmeta:` progress
+key and the `com.plexapp.agents.spokenmeta` provider string in this codebase are
+correct as they stand and are not touched by the rename.
 
 Plex's music schema has nowhere to put a narrator, a co-author, a series
-position or an edition, so that agent documents where it puts them instead —
-`Style` for narrators, namespaced `Mood` values for the rest — and where a book's
-durable identity lives, in the album GUID.
+position, a language or an edition, so that agent documents where it puts them
+instead — `Style` for narrators, namespaced `Mood` values for the rest — and
+where a book's durable identity lives, in the album GUID. All of it was
+already parsed and modeled; narrators, series, language and edition were
+already shown on the book detail screen, and co-authors — parsed and modeled
+identically, but never actually rendered anywhere — now are too.
 
 That identity is why progress follows a book rather than a server. All six of
 the contract's published test vectors are covered by tests in

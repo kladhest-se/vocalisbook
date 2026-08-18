@@ -214,14 +214,14 @@ struct DecodingTests {
         let part = try JSONDecoder().decode(PlexPart.self, from: Data(json.utf8))
         #expect(part.cacheKey == "p1-x")
     }
-    /// SpokenMeta's mapping, which is the reason these fields are read at all.
+    /// VocalisMeta's mapping, which is the reason these fields are read at all.
     ///
     /// Plex's music schema has nowhere to put a narrator or a co-author, so the
     /// agent documents where it puts them instead: Style is narrators, Mood is
     /// authors, and a Mood beginning `Series: ` is a series. Decoding them means
     /// a matched library shows what the agent went and fetched.
     @Test("Style becomes narrators and Mood splits into authors and series")
-    func decodesSpokenMetaTags() throws {
+    func decodesVocalisMetaTags() throws {
         let json = """
         {"ratingKey":"900","title":"Wyrd Sisters","parentTitle":"Terry Pratchett",
          "Genre":[{"tag":"Fantasy"}],
@@ -342,7 +342,7 @@ struct DecodingTests {
     }
 
     /// Plex builds differ, and an album may carry several GUIDs.
-    @Test("A Guid child is read, and SpokenMeta's is preferred")
+    @Test("A Guid child is read, and VocalisMeta's is preferred")
     func guidFromChild() throws {
         let json = """
         {"ratingKey":"900","title":"A Book",

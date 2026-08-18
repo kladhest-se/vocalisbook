@@ -190,7 +190,7 @@ struct GenreTests {
         let genres = try store.genres(sectionID: "srv:2")
         #expect(genres.isEmpty)
     }
-    /// Narrators, co-authors and series, cached from the tags SpokenMeta writes.
+    /// Narrators, co-authors and series, cached from the tags VocalisMeta writes.
     @Test("Caching a book stores its narrators, authors and series")
     func storesCredits() throws {
         let library = try makeStore()

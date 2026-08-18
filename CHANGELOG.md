@@ -34,7 +34,7 @@ The first release. Everything below is new.
   has neither.
 
 - Narrators, series, language and abridgment appear on a book's screen, from the
-  tags the SpokenMeta agent writes. Plex has no field for any of them, so that
+  tags the VocalisMeta agent writes. Plex has no field for any of them, so that
   agent stores narrators as Style and the rest as Mood, and VocalisBook reads them
   where they are. Anything the agent could not determine is left out rather than
   guessed at.
@@ -42,7 +42,7 @@ The first release. Everything below is new.
 - Bookmarks, playback speeds and listening history follow a book rather than a
   server, the same way your place already did — so a second Plex server holding
   the same audiobook shows the same bookmarks rather than someone else's.
-- Your place follows a book rather than a server. Where the SpokenMeta agent has
+- Your place follows a book rather than a server. Where the VocalisMeta agent has
   matched a book, progress syncs under that book's own identity — so the same
   audiobook on a second Plex server picks up where you left off instead of
   starting again.

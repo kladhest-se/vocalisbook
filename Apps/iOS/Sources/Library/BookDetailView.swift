@@ -43,6 +43,15 @@ struct BookDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        // The background this screen was missing — `OfflineView` and
+        // `SettingsView` both already carry this exact pair of modifiers,
+        // and this one had neither, showing the system's default background
+        // regardless of which theme was active. `.scrollContentBackground`
+        // hides the `ScrollView`'s own opaque fill so the theme color
+        // underneath can actually show through; without it the background
+        // modifier below has nothing to be visible around.
+        .scrollContentBackground(.hidden)
+        .background(theme.background.ignoresSafeArea())
         .task { await model.load(app: app, ratingKey: ratingKey) }
         .sheet(isPresented: $showingPlayer) { PlayerView() }
         // Pushed by this view, so it does not depend on which stack opened it.
@@ -99,8 +108,20 @@ struct BookDetailView: View {
                         if let author = model.book?.author {
                             Text(author).foregroundStyle(.secondary)
                         }
+                        // Co-authors: the primary author above is Plex's own
+                        // artist link, one name only. The rest of a
+                        // multi-author credit is in `Mood`, already parsed
+                        // into `credits.authors` — narrators and series read
+                        // from the same place and were already shown here;
+                        // this was the one field of the three that never made
+                        // it onto any screen despite being fully available.
+                        if !model.credits.authors.isEmpty {
+                            Text("With \(model.credits.authors.joined(separator: ", "))")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         // Narrator and series, where Plex has no field of its
-                        // own for either and SpokenMeta puts them in Style and
+                        // own for either and VocalisMeta puts them in Style and
                         // Mood. Shown only when the agent has matched the book:
                         // a heading with nothing under it says less than
                         // nothing.
@@ -316,7 +337,7 @@ final class BookDetailModel {
     private(set) var book: BookRecord?
     private(set) var timeline: CachedTimeline?
 
-    /// Narrators, co-authors and series, from the tags SpokenMeta writes.
+    /// Narrators, co-authors and series, from the tags VocalisMeta writes.
     ///
     /// Plex has no field for a narrator, so the agent puts them in `Style` and
     /// authors and series in `Mood`. Read from the cache rather than the

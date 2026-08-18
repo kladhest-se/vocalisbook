@@ -8,7 +8,7 @@ import Foundation
 /// sees an unrelated book and iCloud sync treats them as unrelated too. That is
 /// silent, and it is wrong.
 ///
-/// SpokenMeta puts a provider identity in the Plex GUID, which is the same on
+/// VocalisMeta puts a provider identity in the Plex GUID, which is the same on
 /// every server that matched the same edition. Where one exists, it is the
 /// identity to use.
 ///
@@ -97,7 +97,7 @@ public enum BookIdentity: Sendable, Hashable {
     /// Reads a Plex GUID, falling back to the server and rating key.
     ///
     /// The GUID is whatever the matching agent wrote, and most of them are not
-    /// SpokenMeta: a `local://`, a legacy `com.plexapp.agents.*`, or nothing at
+    /// VocalisMeta: a `local://`, a legacy `com.plexapp.agents.*`, or nothing at
     /// all on an unmatched album. Anything unrecognised falls through to the
     /// per-server identity rather than being guessed at.
     public static func from(
@@ -194,7 +194,7 @@ public enum BookIdentity: Sendable, Hashable {
         return String(id.dropFirst(prefix.count))
     }
 
-    /// The part of a SpokenMeta GUID that identifies the item.
+    /// The part of a VocalisMeta GUID that identifies the item.
     ///
     /// Three things have to be tolerated, all of them Plex's doing rather than
     /// the agent's: a `?lang=en` query, percent encoding, and a trailing model

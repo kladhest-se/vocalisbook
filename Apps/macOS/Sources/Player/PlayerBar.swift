@@ -68,8 +68,12 @@ struct PlayerBar: View {
                     }
                     // Flexible rather than a fixed 220: the title was the one
                     // thing that could not give up any room, so everything else
-                    // paid for it.
-                    .frame(minWidth: 120, idealWidth: 220, maxWidth: 260, alignment: .leading)
+                    // paid for it. Widened further — 220/260 to 280/380 — to
+                    // take the room freed by capping the scrubber's `Slider`
+                    // at 360pt instead of leaving it fully flexible; the two
+                    // changes are a pair; either alone just moves which
+                    // element ends up with the space nobody wanted.
+                    .frame(minWidth: 120, idealWidth: 280, maxWidth: 380, alignment: .leading)
                 }
 
                 transport
@@ -248,6 +252,15 @@ struct PlayerBar: View {
                     }
                 }
             )
+            // Capped rather than left fully flexible. A `Slider` with no
+            // width of its own happily claims every point of space nothing
+            // else wants, at the title area's direct expense — the two sit
+            // in the same `HStack`, so whatever the slider does not take is
+            // the whole of what the title has to grow into. 360pt is
+            // comfortably more than a scrubber needs to be precisely
+            // usable; the room that frees up is exactly what the title's
+            // own `maxWidth`, in `body`, was raised by.
+            .frame(maxWidth: 360)
 
             Text("-" + Format.duration(
                 ms: player.totalDurationMs - Int(scrubbing ?? Double(player.absoluteMs))

@@ -340,7 +340,7 @@ public enum Schema {
         }
     }
 
-    /// Narrators, co-authors and series, from the tags SpokenMeta writes.
+    /// Narrators, co-authors and series, from the tags VocalisMeta writes.
     ///
     /// Plex's music schema has nowhere to put any of them, so that agent
     /// documents where it puts them instead: `Style` is narrators, `Mood` is

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import PlexKit
 
-/// The client half of SpokenMeta's identity contract.
+/// The client half of VocalisMeta's identity contract.
 ///
 /// Worth testing thoroughly because it is pure, because getting it wrong is
 /// silent, and because one of its rules exists to prevent data loss rather than

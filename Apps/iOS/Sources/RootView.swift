@@ -385,14 +385,26 @@ struct AccountToolbar: ViewModifier {
     @Environment(AppModel.self) private var app
     @State private var showingProfile = false
     @State private var showingSettings = false
+    @State private var showingDownloads = false
 
     func body(content: Content) -> some View {
         content
             .toolbar {
-                // Mode, then configuration, then identity — left to right, in
-                // rising order of how rarely each is touched.
+                // Mode, then downloads, then configuration, then identity —
+                // left to right, in rising order of how rarely each is
+                // touched. Downloads ahead of Settings: checking on a
+                // transfer or clearing space is something to do again and
+                // again, where Settings is closer to a once-per-install
+                // stop.
                 ToolbarItem(placement: .topBarTrailing) {
                     OfflineToggle()
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingDownloads = true
+                    } label: {
+                        Label("Downloads", systemImage: "arrow.down.circle")
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -407,6 +419,15 @@ struct AccountToolbar: ViewModifier {
                     } label: {
                         Label("Account", systemImage: "person.crop.circle")
                     }
+                }
+            }
+            // A `NavigationStack` of its own, unlike the push from Settings —
+            // `OfflineView` supplies none, by design, so whichever caller
+            // presents it has to. Settings already had one to push into;
+            // this button opens a sheet with nothing else in it yet.
+            .sheet(isPresented: $showingDownloads) {
+                NavigationStack {
+                    OfflineView(showsDoneButton: true)
                 }
             }
             // Settings was a tab, and a tab is a place you go back to. This is a

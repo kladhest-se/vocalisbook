@@ -42,6 +42,11 @@ struct PlayerView: View {
             }
         }
         .padding(.bottom, 24)
+        // Missing here the same way it was missing from `BookDetailView` —
+        // this sheet fell back to its default system material regardless of
+        // theme, which is the plain black background in the report rather
+        // than whichever theme was actually active.
+        .background(theme.background.ignoresSafeArea())
         .sheet(isPresented: $showingChapters) { ChapterListSheet() }
         .sheet(isPresented: $showingBookmarks) { PlayerBookmarksSheet() }
         .confirmationDialog("Sleep timer", isPresented: $showingSleepTimer) {

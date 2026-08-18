@@ -10,13 +10,16 @@ import PlatformShared
 ///
 /// It had a tab of its own, twice, both given back for the same reason: a tab
 /// is for a way of looking at the library, and this is storage management. A
-/// toolbar button was tried too and given back in turn — it answered "what is
-/// on this device" the same way regardless of which of those two questions
-/// somebody actually had. They are different questions now: a quick glance —
-/// "show me only what is downloaded" while still browsing — is a toggle in
-/// Browse's own toolbar, independent of offline mode; managing what is here —
-/// sizes, removing things, watching a transfer — is this screen, pushed from
-/// Settings, next to the size it reports.
+/// toolbar button was tried too and given back in turn, for a different
+/// reason — the one button then answered "what is on this device" the same
+/// way regardless of which of two different questions somebody actually had:
+/// a quick glance while still browsing, or coming here specifically to manage
+/// storage. Those are separated now rather than reconflated: the glance is
+/// Browse's own toggle, filtering its grid in place; this screen is reached
+/// by a second, distinct toolbar button, present on every tab, that goes
+/// straight to storage management and nowhere else. Bringing the entry point
+/// back once the two questions had answers of their own is not the same
+/// mistake as the one version answering both at once.
 ///
 /// Books still downloading are shown too. A transfer in progress has bytes on
 /// disk and is exactly what somebody opens this screen to check on, so hiding it
@@ -25,9 +28,16 @@ struct OfflineView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
     @State private var entries: [OfflineEntry] = []
     @State private var totalBytes = 0
     @State private var confirmingRemoveAll = false
+
+    /// `false` when pushed from Settings, which already supplies its own way
+    /// out; `true` when presented directly from the new toolbar button on
+    /// every tab, which needs one of its own. Same pattern `SettingsView`
+    /// already uses for the same reason.
+    var showsDoneButton = false
 
     private var columns: [GridItem] { .coverGrid(sizeClass) }
 
@@ -97,6 +107,13 @@ struct OfflineView: View {
             // It was "Offline", which is the mode rather than the contents —
             // and the mode is a switch in the toolbar, not this list.
             .navigationTitle("Downloads")
+            .toolbar {
+                if showsDoneButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
             .scrollContentBackground(.hidden)
             .background(theme.background.ignoresSafeArea())
             .confirmationDialog(

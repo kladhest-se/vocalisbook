@@ -29,24 +29,41 @@ struct LibraryView: View {
     @State private var showingProfile = false
     @Environment(\.theme) private var theme
 
+    /// A real toggle, unlike the `.constant(.all)` this replaces.
+    ///
+    /// Worth being direct about the history: hiding the sidebar was tried
+    /// three times before and abandoned each time, documented in the note
+    /// still above `NavigationSplitView` below — a toggle button placed
+    /// *inside* `NavigationSplitView`'s own `.toolbar` moved every other
+    /// toolbar button around it, because the split view's usable toolbar
+    /// width changes as a column collapses. This is a different mechanism,
+    /// not another attempt at the same one: the toggle button lives in
+    /// `controlBar`, a plain `HStack` entirely outside `NavigationSplitView`
+    /// and never participating in its toolbar layout, so collapsing the
+    /// sidebar column has nothing there to push around. Untested against a
+    /// running app, same as everything reasoned about this carefully in this
+    /// container — the specific failure mode being avoided is the one
+    /// documented, not a guarantee against every possible one.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
     private var current: SidebarItem { path.last ?? .home }
 
     var body: some View {
-        // Always both columns, and no toggle.
+        // Toggleable again, after three earlier attempts were abandoned —
+        // see `columnVisibility`'s own doc comment for the full history and
+        // for why this attempt uses a different mechanism rather than
+        // repeating the one that kept failing. The short version: the
+        // toggle button lives in `controlBar`, entirely outside this
+        // `NavigationSplitView` and its own toolbar, so collapsing a column
+        // here has no toolbar of its own to disturb.
         //
-        // The toolbar buttons have been chased around this window three times.
-        // Each attempt moved them somewhere the sidebar toggle could not push
-        // them, and each failed for the same reason: the toolbar's usable width
-        // changes when a column collapses, so anything in it moves.
-        //
-        // Nothing collapses now. The sidebar is part of this layout, and the
-        // layout for a narrow window is the compact player — which `RootView`
-        // switches to by width, and which is the honest way to make this window
-        // small. A collapsed sidebar was a third state between the two, and the
-        // only one that made the toolbar dance.
+        // The layout for a narrow window is still the compact player —
+        // which `RootView` switches to by width — so a collapsed sidebar
+        // is a deliberate choice at a normal window width now, not a third,
+        // accidental state between library and mini player.
         VStack(spacing: 0) {
             controlBar
-            NavigationSplitView(columnVisibility: .constant(.all)) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
             // One selection, with one meaning.
             //
             // This list had two selection mechanisms at once: "All books" was a
@@ -358,6 +375,19 @@ struct LibraryView: View {
     /// directly above it reads as belonging to it.
     private var controlBar: some View {
         HStack(spacing: 10) {
+            // Leading, matching where macOS conventionally puts this —
+            // Mail, Finder, Notes all put the sidebar toggle at the left
+            // edge, ahead of everything else in their toolbars.
+            Button {
+                withAnimation {
+                    columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                }
+            } label: {
+                Image(systemName: "sidebar.leading")
+            }
+            .buttonStyle(.plain)
+            .help(columnVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar")
+
             Spacer()
 
             HStack(spacing: 12) {
