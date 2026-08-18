@@ -13,6 +13,39 @@ import PlatformShared
 /// Reached by dragging the window narrow. There is no separate mode to remember
 /// and no toggle to get stuck in the wrong state — the layout follows the size,
 /// and the expand button just resizes the window.
+/// The four sizes `CompactPlayerView`'s content can be, smallest to largest —
+/// see the comment inside `body` for what each one shows and why.
+private enum Tier: Equatable {
+    case artOnly
+    case withProgress
+    case withControls
+    case full
+
+    init(height: CGFloat) {
+        switch height {
+        case ...220: self = .artOnly
+        case ...340: self = .withProgress
+        case ...460: self = .withControls
+        default: self = .full
+        }
+    }
+
+    /// How much of the available height the cover claims before the rest of
+    /// the tier's own elements ask for theirs — decreasing as more of them
+    /// need room. A rough division, not a precisely measured one: nothing
+    /// here has run against a real window to check the numbers against, and
+    /// `artOnly`'s case is unused, since that tier never reaches the code
+    /// path this feeds — the cover *is* the whole view there.
+    var coverFraction: CGFloat {
+        switch self {
+        case .artOnly: 1.0
+        case .withProgress: 0.56
+        case .withControls: 0.42
+        case .full: 0.35
+        }
+    }
+}
+
 struct CompactPlayerView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
@@ -25,72 +58,93 @@ struct CompactPlayerView: View {
             if app.player.bookRatingKey == nil {
                 nothingPlaying
             } else {
-                // The artwork gives way, and the controls do not — down to a
-                // point. Below that point the controls are what gives way
-                // instead, because a transport too small to press is worse
-                // than no transport at all.
+                // Four tiers, not two — each one gives up the least useful
+                // thing first as the window shrinks, and gets it back first
+                // as it grows. Below the first there is nothing left to give
+                // up but the art itself, so that is where it stops.
                 //
-                // A square cover across the full width is as tall as the window
-                // is wide, so shrinking the window shortened the space *and*
-                // kept the cover — pushing the transport off the bottom and
-                // making the mini player unusable at exactly the size somebody
-                // shrank it to reach.
+                //   full         cover, scrubber, titles, transport,
+                //                secondary, and chapters past 520pt
+                //   withControls cover, scrubber, titles, transport
+                //   withProgress cover, scrubber, one line of title
+                //   artOnly      the cover alone, filling every point of
+                //                the window there is
                 //
-                // Measured against the height rather than given a fixed size:
-                // the cover is as large as the space allows and no larger, so
-                // the window can go as small as somebody drags it and the
-                // controls stay legible for as long as there is room for them.
+                // Measured against the height rather than given fixed sizes:
+                // each tier is as large as the space allows and no larger, so
+                // the window can go as small as somebody drags it and every
+                // tier stays legible for as long as there is room for it.
                 GeometryReader { geometry in
-                let isMinimal = geometry.size.height <= 260
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // The bare minimum: art and a way to see, and change,
-                        // where you are — nothing that needs to be read or
-                        // aimed at with a pointer this small. Tapping the
-                        // cover still toggles play and pause, so playback
-                        // stays reachable without expanding the window; the
-                        // ordinary size does not carry the same gesture,
-                        // since a transport already does that job there and a
-                        // cover that silently doubles as a button when one is
-                        // not expected is a worse surprise than a missing one.
-                        cover
-                            .frame(maxHeight: max(64, geometry.size.height * (isMinimal ? 0.56 : 0.40)))
-                            .contentShape(.rect)
-                            .onTapGesture {
-                                if isMinimal { app.togglePlayPauseRespectingOffline() }
+                let height = geometry.size.height
+                let tier = Tier(height: height)
+
+                if tier == .artOnly {
+                    // The full content area, not the full window — `header`
+                    // stays above this regardless of tier, deliberately.
+                    // Traffic lights are hidden throughout the compact
+                    // player, so that row's close button is the only way to
+                    // close the window without a keyboard shortcut; losing
+                    // it at exactly the smallest size, where the window is
+                    // easiest to lose track of, would trade one convenience
+                    // for a real one.
+                    //
+                    // No padding, no fixed aspect ratio to letterbox against
+                    // a window that is not square — `CoverImage` already
+                    // fills and crops whatever frame it is given, so handing
+                    // it the whole available rect is the entire
+                    // implementation.
+                    CoverImage(thumb: app.nowPlayingThumb)
+                        .frame(width: geometry.size.width, height: height)
+                        .contentShape(.rect)
+                        .onTapGesture { app.togglePlayPauseRespectingOffline() }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            // Tapping the cover toggles play and pause at
+                            // every tier smaller than full — there is
+                            // nowhere else to aim at `withProgress`, and
+                            // losing the gesture the moment a transport
+                            // appears at `withControls` would be a control
+                            // that quietly stops working rather than one
+                            // that was never offered.
+                            cover
+                                .frame(maxHeight: max(64, height * tier.coverFraction))
+                                .contentShape(.rect)
+                                .onTapGesture {
+                                    if tier != .full { app.togglePlayPauseRespectingOffline() }
+                                }
+                            scrubber
+
+                            if tier == .withProgress {
+                                // The book's own title only — not the
+                                // chapter, not the author, both of which
+                                // `titles` shows from `withControls` up. One
+                                // line is what is left once the question
+                                // this asks is "what am I listening to", not
+                                // "where exactly am I in it".
+                                Text(app.nowPlayingTitle ?? "")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                titles
+                                transport
+                                if tier == .full {
+                                    secondary
+                                }
                             }
-                        scrubber
 
-                        if isMinimal {
-                            // The book's own title only — not the chapter, not
-                            // the author, both of which `titles` shows at the
-                            // ordinary size. One line is what is left once the
-                            // question this asks is "what am I listening to",
-                            // not "where exactly am I in it".
-                            Text(app.nowPlayingTitle ?? "")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(theme.text)
-                                .lineLimit(1)
-                                .multilineTextAlignment(.center)
-                        } else {
-                            titles
-                            transport
-                            secondary
+                            // Chapters need the most room, and give it up
+                            // first — the last thing added going up, and the
+                            // first thing dropped going down.
+                            if height > 520 {
+                                chapters
+                            }
                         }
-
-                        // Chapters need the most room, and give it up first.
-                        //
-                        // Below this the window is a transport with a picture
-                        // on it, which is what somebody dragging it this
-                        // small is asking for — a list they cannot read two
-                        // rows of is not worth the height it takes from the
-                        // controls.
-                        if geometry.size.height > 520 {
-                            chapters
-                        }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 18)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 18)
                 }
                 }
             }

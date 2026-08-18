@@ -93,6 +93,13 @@ public enum WindowSizer {
         guard let window = mainWindow else { return }
         window.titleVisibility = compact ? .hidden : .visible
         window.titlebarAppearsTransparent = compact
+        // `titlebarAppearsTransparent` makes the bar see-through; it does not
+        // stop AppKit drawing a hairline where the bar meets the content —
+        // that is a separate property, and left at its default it survives
+        // both the transparency and the hidden traffic lights. Exactly the
+        // line this view's own border overlay was mistaken for a second
+        // source of.
+        window.titlebarSeparatorStyle = compact ? .none : .automatic
         window.isMovableByWindowBackground = compact
         if compact {
             window.styleMask.insert(.fullSizeContentView)
