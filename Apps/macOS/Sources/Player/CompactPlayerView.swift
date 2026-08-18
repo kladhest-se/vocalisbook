@@ -117,6 +117,20 @@ struct CompactPlayerView: View {
                 let height = geometry.size.height
                 let tier = resolvedTier(height: height, width: geometry.size.width)
 
+                // Pinned explicitly to what was just measured, not left to
+                // whatever size its own children would otherwise settle on.
+                //
+                // A `GeometryReader` proposes its measured size to its child,
+                // but nothing forces the child — or, more to the point, a
+                // `ScrollView` two levels further in wanting to be as tall as
+                // its own content — to actually stay within that proposal
+                // unless something pins it explicitly. Without this frame,
+                // the whole subtree was free to grow to whatever size its
+                // content wanted rather than the window's actual size, which
+                // fits everything else observed: the tier and the debug
+                // label both frozen at "380×446" while the real window kept
+                // shrinking past it, and the cropping that went with it —
+                // all one symptom, not three.
                 ZStack(alignment: .topLeading) {
                 if tier == .artOnly {
                     // The full content area, not the full window — `header`
@@ -215,6 +229,7 @@ struct CompactPlayerView: View {
                     .allowsHitTesting(false)
                 #endif
             }
+            .frame(width: geometry.size.width, height: height)
         }
         }
         }
