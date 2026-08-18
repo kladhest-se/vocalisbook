@@ -54,14 +54,25 @@ struct CompactPlayerView: View {
                         // cover that silently doubles as a button when one is
                         // not expected is a worse surprise than a missing one.
                         cover
-                            .frame(maxHeight: max(64, geometry.size.height * (isMinimal ? 0.62 : 0.40)))
+                            .frame(maxHeight: max(64, geometry.size.height * (isMinimal ? 0.56 : 0.40)))
                             .contentShape(.rect)
                             .onTapGesture {
                                 if isMinimal { app.togglePlayPauseRespectingOffline() }
                             }
                         scrubber
 
-                        if !isMinimal {
+                        if isMinimal {
+                            // The book's own title only — not the chapter, not
+                            // the author, both of which `titles` shows at the
+                            // ordinary size. One line is what is left once the
+                            // question this asks is "what am I listening to",
+                            // not "where exactly am I in it".
+                            Text(app.nowPlayingTitle ?? "")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                                .multilineTextAlignment(.center)
+                        } else {
                             titles
                             transport
                             secondary
@@ -111,8 +122,16 @@ struct CompactPlayerView: View {
         // window, so applying compact chrome the moment it appears is safe
         // unconditionally — there is no case where `CompactPlayerView` is on
         // screen and the library's full chrome is the right one.
-        .task {
-            WindowSizer.applyChrome(compact: true)
+        //
+        // `onAppear`, not `task`: `task` schedules onto the concurrency
+        // system and can run a beat later than the view actually appearing,
+        // which is exactly the gap this exists to close. `applyChromeWhenReady`
+        // rather than `applyChrome` directly, because AppKit's own notion of
+        // whether the window is visible can itself lag behind SwiftUI
+        // inserting this view — a fresh window and a fresh view competing to
+        // be ready first, with no guarantee which wins.
+        .onAppear {
+            WindowSizer.applyChromeWhenReady(compact: true)
         }
     }
 

@@ -27,6 +27,23 @@ public enum WindowSizer {
 
     nonisolated public static let regularSize = NSSize(width: 1100, height: 700)
 
+    /// The floor `applyChrome` sets directly on the window, in each mode.
+    ///
+    /// `RootView`'s `.windowResizability(.contentSize)` is meant to derive
+    /// this from content on its own, and normally would — but whether it
+    /// recomputes reactively as the active branch switches between
+    /// `CompactPlayerView` and `LibraryView`, rather than only once, is not
+    /// something this app controls or can fully rely on. Setting `NSWindow`'s
+    /// own `minSize` here as well costs nothing when the SwiftUI side is
+    /// already right, and is the one thing guaranteed to work if it is not.
+    /// The compact floor sits under the ultra-minimal player's own 260pt
+    /// height threshold, so there is room to drag into that state rather than
+    /// the window stopping right at its edge; the library floor sits above
+    /// `compactWidth`, so it is never asked to hold a sidebar and a grid at a
+    /// size neither has room for.
+    nonisolated private static let compactMinSize = NSSize(width: 140, height: 160)
+    nonisolated private static let libraryMinSize = NSSize(width: 650, height: 450)
+
     private static var mainWindow: NSWindow? {
         // The settings window and the menu bar popover are also windows; the one
         // wanted here is the document-ish one that can actually resize.
@@ -76,6 +93,7 @@ public enum WindowSizer {
         } else {
             window.styleMask.remove(.fullSizeContentView)
         }
+        window.minSize = compact ? compactMinSize : libraryMinSize
 
         // The traffic lights go too, in the small layout.
         //
@@ -91,6 +109,30 @@ public enum WindowSizer {
                        .zoomButton] {
             window.standardWindowButton(button)?.isHidden = compact
         }
+    }
+
+    /// `applyChrome`, but retried briefly if the window is not there yet.
+    ///
+    /// `applyChrome` no-ops silently when `mainWindow` finds nothing — right
+    /// for a caller that only fires on a real resize, where the window is by
+    /// definition already showing, and wrong for one that fires from a
+    /// view's own appearance. AppKit's `isVisible` bookkeeping can lag a
+    /// beat behind SwiftUI inserting that view into the hierarchy — closing
+    /// the mini player and reopening it from the menu bar is exactly this: a
+    /// new window, a new `CompactPlayerView`, and no guarantee about which of
+    /// the two is ready first. A silent no-op in that gap is the empty title
+    /// bar this exists to prevent. Five attempts, 50ms apart, catch it
+    /// without costing anything once the window is already there — the
+    /// common case returns after the first check.
+    public static func applyChromeWhenReady(compact: Bool, attemptsRemaining: Int = 5) {
+        guard mainWindow != nil else {
+            guard attemptsRemaining > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                applyChromeWhenReady(compact: compact, attemptsRemaining: attemptsRemaining - 1)
+            }
+            return
+        }
+        applyChrome(compact: compact)
     }
 
     /// Keeps the chrome in step with a window the user is dragging.
