@@ -85,6 +85,19 @@ struct CompactPlayerView: View {
             }
         }
         .background(theme.background.ignoresSafeArea())
+        // Without this, nothing tells AppKit that shrinking below the
+        // ultra-minimal threshold below is even valid.
+        //
+        // `.windowResizability(.contentSize)` derives the window's minimum
+        // draggable size from the content's own intrinsic layout — and with
+        // no explicit floor, that intrinsic size is whatever the *current*
+        // branch of `isMinimal` happens to need, which is circular: the
+        // window can never physically reach the height that would switch to
+        // the smaller branch, because nothing told AppKit that height was
+        // reachable in the first place. 140×160 sits comfortably under the
+        // 260pt threshold above, so there is real room to drag into once it
+        // is reached rather than the window stopping right at the boundary.
+        .frame(minWidth: 140, minHeight: 160)
         // A thin border, because the chrome is gone.
         //
         // With the title bar transparent and the traffic lights hidden, the
@@ -95,6 +108,24 @@ struct CompactPlayerView: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(theme.secondaryText.opacity(0.25), lineWidth: 1)
                 .ignoresSafeArea()
+        }
+        // A second trigger, alongside `WindowSizer.followResizes`'s
+        // notification observers, for the same chrome this view already
+        // depends on being applied.
+        //
+        // Those observers fire on `didResize` and `didBecomeKey` — reliable
+        // for a window somebody is dragging or switching to, and not
+        // guaranteed for one that simply *appears* already this size, which
+        // is what closing the mini player and reopening it from the menu bar
+        // does: SwiftUI builds a new window at the remembered small frame,
+        // and if that happens to land before either notification fires, the
+        // title bar and traffic lights come back over content that has no
+        // room for them. This view only ever exists inside the compact
+        // window, so applying compact chrome the moment it appears is safe
+        // unconditionally — there is no case where `CompactPlayerView` is on
+        // screen and the library's full chrome is the right one.
+        .task {
+            WindowSizer.applyChrome(compact: true)
         }
     }
 

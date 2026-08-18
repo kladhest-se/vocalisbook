@@ -12,7 +12,7 @@ import PlatformShared
 /// It takes a closure rather than a binding, because the thing it opens is a
 /// sidebar selection and that belongs to `LibraryView`.
 struct HomeView: View {
-    let open: (String) -> Void
+    let open: (String, String) -> Void
 
     /// Called when somebody presses the streak.
     ///
@@ -57,7 +57,7 @@ struct HomeView: View {
                     section("Continue listening") {
                         LazyVGrid(columns: columns, spacing: 20) {
                             ForEach(model.visible(app: app), id: \.ratingKey) { book in
-                                Button { open(book.ratingKey) } label: { BookTile(book: book) }
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -70,7 +70,7 @@ struct HomeView: View {
                     section("Recently listened to") {
                         LazyVGrid(columns: columns, spacing: 20) {
                             ForEach(model.recentlyFinished, id: \.ratingKey) { book in
-                                Button { open(book.ratingKey) } label: { BookTile(book: book) }
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -81,7 +81,7 @@ struct HomeView: View {
                     section("Recently added") {
                         LazyVGrid(columns: columns, spacing: 20) {
                             ForEach(model.recentlyAdded, id: \.ratingKey) { book in
-                                Button { open(book.ratingKey) } label: { BookTile(book: book) }
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
                                     .buttonStyle(.plain)
                             }
                         }

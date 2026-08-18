@@ -10,57 +10,46 @@ import PlatformShared
 /// Unlike an author, a book has several genres. That is what a genre is, and why
 /// the store keeps them in a table of their own rather than a column.
 ///
-/// No `NavigationStack`, for the reason `AuthorsView` explains at length: local
-/// state instead of a push means no automatic back chevron in the title bar,
-/// and leaving this screen through the sidebar always comes back to the grid
-/// rather than wherever it was left.
+/// No navigation state of its own, for the reason `AuthorsView` explains at
+/// length: which genre is open, and which book after that, are steps in
+/// `LibraryView.path` rather than something this screen remembers by itself.
 struct GenresView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var genres: [GenreSummary] = []
-    @State private var selectedGenre: String?
-    let open: (String) -> Void
+    let onSelect: (String) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
 
     var body: some View {
-        Group {
-            if let selectedGenre {
-                VStack(spacing: 0) {
-                    BackButton(title: "Genres") { self.selectedGenre = nil }
-                    GenreBooksView(genre: selectedGenre, open: open)
-                }
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 24) {
-                        ForEach(genres) { genre in
-                            Button {
-                                selectedGenre = genre.name
-                            } label: {
-                                GenreTile(genre: genre)
-                            }
-                            .buttonStyle(.plain)
-                        }
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 24) {
+                ForEach(genres) { genre in
+                    Button {
+                        onSelect(genre.name)
+                    } label: {
+                        GenreTile(genre: genre)
                     }
-                    .padding(20)
-                    .padding(.bottom, 20)
+                    .buttonStyle(.plain)
                 }
-                .background(theme.background.ignoresSafeArea())
-                .navigationTitle("Genres")
-                .overlay {
-                    if genres.isEmpty {
-                        // Not "yet": a library Plex has not matched carries no tags
-                        // at all, and refreshing will not produce any. It is a
-                        // metadata problem with a metadata fix.
-                        ContentUnavailableView(
-                            "No genres",
-                            systemImage: "theatermasks",
-                            description: Text(
-                                "Plex tags books with genres once an agent has matched them."
-                            )
-                        )
-                    }
-                }
+            }
+            .padding(20)
+            .padding(.bottom, 20)
+        }
+        .background(theme.background.ignoresSafeArea())
+        .navigationTitle("Genres")
+        .overlay {
+            if genres.isEmpty {
+                // Not "yet": a library Plex has not matched carries no tags
+                // at all, and refreshing will not produce any. It is a
+                // metadata problem with a metadata fix.
+                ContentUnavailableView(
+                    "No genres",
+                    systemImage: "theatermasks",
+                    description: Text(
+                        "Plex tags books with genres once an agent has matched them."
+                    )
+                )
             }
         }
         .task { reload() }
@@ -112,7 +101,7 @@ struct GenreTile: View {
 /// The books in one genre.
 struct GenreBooksView: View {
     let genre: String
-    let open: (String) -> Void
+    let open: (String, String) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
@@ -125,7 +114,7 @@ struct GenreBooksView: View {
             LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(books, id: \.ratingKey) { book in
                     Button {
-                        open(book.ratingKey)
+                        open(book.ratingKey, book.title)
                     } label: {
                         BookTile(book: book)
                     }

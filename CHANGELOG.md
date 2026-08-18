@@ -197,6 +197,8 @@ browsing — is a toggle beside search in Browse.
 - **iPhone and iPad** — tabs, a mini player above them, a full player sheet. On
   an iPad the covers are larger and the player turns on its side.
 - **Mac** — sidebar, grid, and the transport docked at the bottom of the window.
-  Collapses to a compact player below 620pt wide.
+  Collapses to a compact player below 620pt wide. Browsing into an author,
+  series or genre keeps a breadcrumb trail, so going back steps up one level
+  rather than straight to the top.
 - **Apple TV** — a focus-driven grid, a full-screen player, and search. Bookmarks
   are a list on the book, since a television has no swipe to delete with.

@@ -13,9 +13,23 @@ import PlatformShared
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @State private var model = LibraryModel()
-    @State private var selection: SidebarItem? = .home
+
+    /// The full trail, not just where it ends.
+    ///
+    /// A single `selection` value could only ever say where you are, so the
+    /// back button had nowhere to go back *to* except a hardcoded root —
+    /// opening a book from inside a specific author's page landed back on the
+    /// author list at best and the library at worst, with no memory of having
+    /// browsed by author at all. Every step — a sidebar section, a specific
+    /// author or series or genre, a book — pushes onto this instead, and going
+    /// back pops one, which is what going back means anywhere else.
+    ///
+    /// Always at least one element; `current` is what is actually on screen.
+    @State private var path: [SidebarItem] = [.home]
     @State private var showingProfile = false
     @Environment(\.theme) private var theme
+
+    private var current: SidebarItem { path.last ?? .home }
 
     var body: some View {
         // Always both columns, and no toggle.
@@ -49,6 +63,12 @@ struct LibraryView: View {
             // Every row is a case of one enum still, and the detail pane still
             // switches on it — that part was right. What changed is what draws
             // the rows.
+            //
+            // It moved on once more since: `selection` held one value, so the
+            // back button had nowhere to go but a hardcoded root regardless of
+            // how it was reached. `path`, below, is the same idea extended to
+            // the whole trail rather than just its end — see the property
+            // itself for why.
             //
             // `List(selection:)` drew its own separators between every row and
             // its own selection colour on top of the one this file chose — a
@@ -126,30 +146,47 @@ struct LibraryView: View {
             VStack(spacing: 0) {
                 DegradedBanner()
 
-                switch selection ?? .home {
+                // Only past the root: a trail with one crumb in it is just
+                // the section you are already looking at in the sidebar, and
+                // showing it again says nothing.
+                if path.count > 1 {
+                    breadcrumbBar
+                }
+
+                switch current {
                 case .home:
                     HomeView(
-                        open: { selection = .book($0) },
-                        showHistory: { selection = .history }
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) },
+                        showHistory: { path = [.history] }
                     )
                 case .allBooks:
                     grid
                 case .authors:
-                    AuthorsView(open: { selection = .book($0) })
+                    AuthorsView(onSelect: { path.append(.authorDetail($0)) })
+                case .authorDetail(let name):
+                    AuthorBooksView(
+                        author: name,
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) }
+                    )
                 case .series:
-                    SeriesView(open: { selection = .book($0) })
+                    SeriesView(onSelect: { path.append(.seriesDetail($0)) })
+                case .seriesDetail(let name):
+                    SeriesBooksView(
+                        series: name,
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) }
+                    )
                 case .genres:
-                    GenresView(open: { selection = .book($0) })
+                    GenresView(onSelect: { path.append(.genreDetail($0)) })
+                case .genreDetail(let name):
+                    GenreBooksView(
+                        genre: name,
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) }
+                    )
                 case .downloads:
                     DownloadsView()
                 case .history:
                     HistoryView()
-                case .book(let ratingKey):
-                    // A way back. The detail replaces the grid rather than
-                    // pushing over it, so without this the library is
-                    // unreachable once a book is open — which is exactly how it
-                    // shipped.
-                    BackButton(title: "Library") { selection = .allBooks }
+                case .book(let ratingKey, _):
                     BookDetailView(ratingKey: ratingKey)
                 }
             }
@@ -176,7 +213,7 @@ struct LibraryView: View {
         // sidebar cannot move. The field is in the Browse screen now, above the
         // grid it filters, which is also where somebody looks for it.
             .onChange(of: model.search) { _, _ in
-                selection = .allBooks
+                path = [.allBooks]
                 model.reload(app: app)
             }
         }
@@ -189,7 +226,17 @@ struct LibraryView: View {
             // Cleared as it is honoured, so asking for the same book twice in a
             // row still works — an unchanged value publishes nothing.
             guard let requested else { return }
-            selection = .book(requested)
+            // A fresh trail rather than a push: this arrives from outside the
+            // library entirely — Settings, the downloads list — so there is no
+            // existing browsing context for a book opened this way to be a
+            // step *in*. Falling back to the rating key itself if the lookup
+            // somehow misses is a degraded crumb, not a broken one — the book
+            // still opens either way.
+            var title = requested
+            if let library = app.library, let found = try? library.book(ratingKey: requested) {
+                title = found.title
+            }
+            path = [.allBooks, .book(ratingKey: requested, title: title)]
             app.requestedBook = nil
         }
         .task {
@@ -207,23 +254,34 @@ struct LibraryView: View {
         .onChange(of: app.libraryRevision) { _, _ in model.reload(app: app) }
     }
 
-    /// One row, coloured by whether it is the one on screen.
+    /// One row, coloured by whether its section is the root of the current
+    /// trail.
     ///
     /// A plain button rather than a tagged `Label` — see the comment above the
     /// sidebar's `ScrollView` for why `List(selection:)` was replaced outright
-    /// rather than patched. Selection is `selection = tag` directly; the tint
-    /// and the filled icon are this function's whole job, matching the accent
-    /// every other selected state in the app already uses — the iPad's tab
-    /// bar, a focused row on the television, a chosen theme in Settings.
+    /// rather than patched. Clicking resets `path` to just this tag, which is
+    /// the whole reason leaving a section through the sidebar and coming back
+    /// always lands on its root; the tint and the filled icon are this
+    /// function's whole job otherwise, matching the accent every other
+    /// selected state in the app already uses — the iPad's tab bar, a focused
+    /// row on the television, a chosen theme in Settings.
     ///
     /// The `.fill` suffix is assumed to exist for every symbol passed in here
     /// rather than checked — true for the seven in use, and worth confirming
     /// again before reaching for an eighth: a name that does not resolve
     /// renders as nothing rather than an error.
     private func sidebarRow(_ title: String, _ symbol: String, tag: SidebarItem) -> some View {
-        let isSelected = selection == tag
+        // Checked against the root of the trail, not the current step: while
+        // browsing a specific author's books, the row that should stay lit is
+        // "Authors", not nothing — the trail started there and the sidebar
+        // ought to say so.
+        let isSelected = path.first == tag
         return Button {
-            selection = tag
+            // A reset, not a push. This is what makes coming back to a
+            // section through the sidebar always land on its root rather than
+            // wherever it was left — the previous trail is discarded outright
+            // rather than carried forward into an unrelated one.
+            path = [tag]
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "\(symbol).fill" : symbol)
@@ -242,6 +300,47 @@ struct LibraryView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+    }
+
+    /// The trail, drawn as one back button plus every step so far — clicking
+    /// a step jumps straight to it, truncating whatever came after.
+    ///
+    /// Only ever shown past the root, by its one caller — a trail of one
+    /// crumb is just the section already lit in the sidebar.
+    private var breadcrumbBar: some View {
+        HStack(spacing: 4) {
+            BackButton(title: path[path.count - 2].breadcrumbTitle) {
+                path.removeLast()
+            }
+            .padding(.trailing, 6)
+
+            ForEach(Array(path.enumerated()), id: \.offset) { index, item in
+                if index > 0 {
+                    Text("›")
+                        .foregroundStyle(theme.tertiaryText)
+                }
+                Button {
+                    // Truncates rather than replaces: everything up to and
+                    // including this step stays, everything after it goes —
+                    // which is what clicking a crumb in the middle of a trail
+                    // ought to mean.
+                    path = Array(path.prefix(index + 1))
+                } label: {
+                    Text(item.breadcrumbTitle)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                // The last crumb is where you already are; a click that does
+                // nothing is a worse answer than no click at all.
+                .disabled(index == path.count - 1)
+                .foregroundStyle(index == path.count - 1 ? theme.text : theme.secondaryText)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     /// The controls, on their own row under the title bar.
@@ -342,7 +441,7 @@ struct LibraryView: View {
                 spacing: 24
             ) {
                 ForEach(model.books, id: \.ratingKey) { book in
-                    Button { selection = .book(book.ratingKey) } label: { BookTile(book: book) }
+                    Button { path.append(.book(ratingKey: book.ratingKey, title: book.title)) } label: { BookTile(book: book) }
                         .buttonStyle(.plain)
                 }
             }
@@ -589,26 +688,25 @@ struct CoverImage: View {
 ///
 /// `NavigationStack` draws its own back chevron automatically, in the title
 /// bar row beside the traffic lights — which is where it was, on every screen
-/// that reached a deeper view by pushing one. None of them do that any more:
-/// Authors, Series and Genres each swap local state instead, the same way the
-/// top-level sidebar already swaps `selection` to show a book. No push means
-/// no automatic chevron for the system to draw, and this is the only way back
-/// there is — one definition, so the four screens that need it stay in step.
+/// that reached a deeper view by pushing one. Nothing does that any more:
+/// every step, from a sidebar section down to a specific book, is a push onto
+/// `LibraryView.path` instead, and this is `breadcrumbBar`'s leading element —
+/// its only remaining caller, now that Authors, Series and Genres no longer
+/// keep any navigation state of their own to have a back button for.
+///
+/// Just the button, deliberately: the row it sits in, and what follows it, are
+/// the caller's to decide.
 struct BackButton: View {
     let title: String
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button(action: action) {
-                Label(title, systemImage: "chevron.left")
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("[", modifiers: .command)
-            Spacer()
+        Button(action: action) {
+            Label(title, systemImage: "chevron.left")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .buttonStyle(.borderless)
+        .keyboardShortcut("[", modifiers: .command)
+        .help("Back to \(title)")
     }
 }
 
@@ -717,11 +815,12 @@ struct OfflineToggle: View {
 
 /// What the sidebar can be showing.
 ///
-/// One type for every row, so the sidebar's buttons and the detail pane agree
-/// on a single value rather than tracking two things that can drift apart. The
-/// arrangement before this mixed a hand-drawn highlight with `NavigationLink`s
-/// and could get into a state where the lit row and the visible screen
-/// disagreed, with no way to click back.
+/// One type for every level of navigation, not only the top-level sections —
+/// `authorDetail`/`seriesDetail`/`genreDetail` exist so that opening a book
+/// from inside a specific author, series, or genre is a step in the *same*
+/// shared trail as everything else, not a separate piece of state that gets
+/// lost the moment something else replaces it. See `path` on `LibraryView`
+/// for what that trail actually is and why it exists.
 enum SidebarItem: Hashable {
     case home
     case allBooks
@@ -730,5 +829,26 @@ enum SidebarItem: Hashable {
     case genres
     case downloads
     case history
-    case book(String)
+    case authorDetail(String)
+    case seriesDetail(String)
+    case genreDetail(String)
+    case book(ratingKey: String, title: String)
+
+    /// What a breadcrumb crumb says for this step, and what the back button
+    /// says it is going back *to* — the previous step's title, read from here.
+    var breadcrumbTitle: String {
+        switch self {
+        case .home: "Home"
+        case .allBooks: "Browse"
+        case .authors: "Authors"
+        case .series: "Series"
+        case .genres: "Genres"
+        case .downloads: "Downloads"
+        case .history: "History"
+        case .authorDetail(let name): name
+        case .seriesDetail(let name): name
+        case .genreDetail(let name): name
+        case .book(_, let title): title
+        }
+    }
 }

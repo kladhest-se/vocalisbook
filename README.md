@@ -248,7 +248,10 @@ app's theme cannot reach.
 
 **Mac** — the same five sections as the other platforms, as sidebar rows rather
 than tabs, plus Downloads and History, with the transport docked at the bottom of
-the window. Refresh, offline mode and the account sit beside the search
+the window. Browsing into a specific author, series or genre — and from there
+into a book — keeps a trail rather than forgetting it the moment you open
+something: a back button steps up one level at a time, and a row of
+breadcrumbs above the content jumps straight to any earlier one. Refresh, offline mode and the account sit beside the search
 field, and are in the View and app menus too, with ⌘R and ⇧⌘O rather than hidden in a sheet. Below 620pt wide the window becomes a
 compact player instead of a library; the layout follows the window size, so there
 is no mode to remember. The app stays in the menu bar when you close the window,
