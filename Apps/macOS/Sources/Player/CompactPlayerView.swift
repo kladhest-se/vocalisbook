@@ -112,6 +112,19 @@ struct CompactPlayerView: View {
         // other way now, on request, not by accident — ⌘W still closes the
         // window regardless, and growing the window even slightly brings
         // the header back.
+        //
+        // `.ignoresSafeArea(.container, edges: .top)` on the `VStack`
+        // itself further down, not only on its `.background` — a
+        // `.background(...).ignoresSafeArea()` extends the *fill color*
+        // past the top safe-area inset, but does not by itself move where
+        // the `VStack`'s own children get positioned. While `header` was
+        // always present it sat in exactly that inset by design, since
+        // that is where a title-bar-style header belongs, so nothing
+        // looked wrong. Omitting it conditionally left the *next* child —
+        // the tier content — still positioned starting below the same
+        // inset, which is the dark gap above the art in the artOnly
+        // report: the background color reached it, but the content laid
+        // out as if the reserved space were still spoken for.
         let hidesHeader = app.player.bookRatingKey != nil
             && resolvedTier(height: outerGeometry.size.height, width: outerGeometry.size.width) == .artOnly
 
@@ -279,6 +292,12 @@ struct CompactPlayerView: View {
         // was not the one observed to be wrong — nothing here should be
         // trusted to self-report correctly anymore without being told to.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Content, not only background — see the note above `hidesHeader`
+        // for why both are needed. `.top` specifically: the bottom and
+        // sides were never the problem, and a narrower edge list is less
+        // that could go subtly wrong somewhere this has already gone wrong
+        // more than once.
+        .ignoresSafeArea(.container, edges: .top)
         .background(theme.background.ignoresSafeArea())
         // A thin border, because the chrome is gone.
         //
