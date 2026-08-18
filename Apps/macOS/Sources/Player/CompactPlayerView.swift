@@ -85,19 +85,6 @@ struct CompactPlayerView: View {
             }
         }
         .background(theme.background.ignoresSafeArea())
-        // Without this, nothing tells AppKit that shrinking below the
-        // ultra-minimal threshold below is even valid.
-        //
-        // `.windowResizability(.contentSize)` derives the window's minimum
-        // draggable size from the content's own intrinsic layout — and with
-        // no explicit floor, that intrinsic size is whatever the *current*
-        // branch of `isMinimal` happens to need, which is circular: the
-        // window can never physically reach the height that would switch to
-        // the smaller branch, because nothing told AppKit that height was
-        // reachable in the first place. 140×160 sits comfortably under the
-        // 260pt threshold above, so there is real room to drag into once it
-        // is reached rather than the window stopping right at the boundary.
-        .frame(minWidth: 140, minHeight: 160)
         // A thin border, because the chrome is gone.
         //
         // With the title bar transparent and the traffic lights hidden, the

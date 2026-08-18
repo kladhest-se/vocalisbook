@@ -29,6 +29,23 @@ struct RootView: View {
                         LibraryView()
                     }
                 }
+                // Without this, nothing tells AppKit that shrinking the window
+                // past a certain point is even valid.
+                //
+                // `.windowResizability(.contentSize)` derives the window's
+                // minimum draggable size from *this* content — and a bare
+                // `GeometryReader` reports no intrinsic size of its own; it
+                // takes whatever space its parent offers and passes nothing
+                // back up, regardless of what its children would prefer. A
+                // `.frame(minWidth:minHeight:)` on `CompactPlayerView` itself,
+                // one level inside this, had no effect for exactly that
+                // reason — the GeometryReader wrapping it broke the
+                // propagation before it ever reached the window. This is the
+                // level that actually gets measured. 140×160 sits comfortably
+                // under the ultra-minimal player's own 260pt height
+                // threshold, so there is real room to drag into once reached
+                // rather than the window stopping right at the boundary.
+                .frame(minWidth: 140, minHeight: 160)
             case .failed(let message):
                 FailureView(message: message)
             }
