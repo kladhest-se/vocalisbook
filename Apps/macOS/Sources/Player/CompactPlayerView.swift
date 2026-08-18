@@ -15,7 +15,7 @@ import PlatformShared
 /// and the expand button just resizes the window.
 /// The four sizes `CompactPlayerView`'s content can be, smallest to largest —
 /// see the comment inside `body` for what each one shows and why.
-private enum Tier: Int, Comparable, Hashable {
+private enum Tier: Int, Comparable, Hashable, CaseIterable {
     case artOnly = 0
     case withProgress = 1
     case withControls = 2
@@ -170,6 +170,7 @@ struct CompactPlayerView: View {
                 // fails to compile rather than doing something unexpected.
                 let tier = resolvedTier(height: height, width: geometry.size.width)
 
+                Group {
                 if tier == .artOnly {
                     // The full content area, not the full window — `header`
                     // stays above this regardless of tier, deliberately.
@@ -275,7 +276,37 @@ struct CompactPlayerView: View {
                     }
                 }
                 }
+                // Temporary, and deliberately loud about it: this feature has
+                // gone through several rounds where the only feedback
+                // available was a screenshot after the fact, with no way to
+                // tell whether a report meant the wrong tier was chosen or
+                // the right tier still did not fit. This makes both
+                // questions answerable directly — the live width, height and
+                // chosen tier, plus which tiers have been measured to
+                // overflow at some height and what that height was. Remove
+                // once the tier system has actually been confirmed correct
+                // against a running app rather than reasoned about from
+                // outside one.
+                #if DEBUG
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(Int(geometry.size.width))×\(Int(height)) → \(tier)")
+                        ForEach(Tier.allCases, id: \.self) { candidate in
+                            if let recorded = overflowThresholds[candidate] {
+                                Text("\(candidate) overflows ≤\(Int(recorded))")
+                            }
+                        }
+                    }
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .background(.black.opacity(0.65), in: .rect(cornerRadius: 4))
+                    .padding(4)
+                    .allowsHitTesting(false)
+                }
+                #endif
             }
+        }
         }
         .background(theme.background.ignoresSafeArea())
         // A thin border, because the chrome is gone.
