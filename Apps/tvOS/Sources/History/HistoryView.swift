@@ -93,7 +93,7 @@ struct HistoryView: View {
                                     sessions = []
                                 } else {
                                     expandedDay = entry.day
-                                    sessions = (try? app.sessions.sessions(on: entry.day)) ?? []
+                                    sessions = (try? app.sessions.sessions(on: entry.day, sectionID: app.sectionID)) ?? []
                                 }
                             } label: {
                                 DayCard(
@@ -122,9 +122,9 @@ struct HistoryView: View {
     }
 
     private func reload() {
-        stats = try? app.sessions.stats()
+        stats = try? app.sessions.stats(sectionID: app.sectionID)
         if let expandedDay {
-            sessions = (try? app.sessions.sessions(on: expandedDay)) ?? []
+            sessions = (try? app.sessions.sessions(on: expandedDay, sectionID: app.sectionID)) ?? []
         }
     }
 }

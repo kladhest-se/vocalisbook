@@ -204,6 +204,11 @@ struct SettingsView: View {
                  ? resetConfirmationWithCloud
                  : resetConfirmationWithoutCloud)
         }
+        // Found in the same audit that fixed several other screens this
+        // session: `theme` was already declared and already used throughout
+        // the rows below for text — just never applied to the screen's own
+        // background.
+        .background(theme.background.ignoresSafeArea())
     }
 }
 
@@ -280,6 +285,7 @@ struct SettingsRow<Destination: View>: View {
 struct ThemeChooser: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @FocusState private var focusedOption: ThemeSelection?
 
     private let columns = [GridItem(.adaptive(minimum: 340, maximum: 420), spacing: 28)]
@@ -310,6 +316,13 @@ struct ThemeChooser: View {
             .padding(.horizontal, 60)
             .padding(.vertical, 40)
         }
+        // Genuinely missed when this was redesigned earlier this session,
+        // not merely a later addition catching up — `theme` was not even
+        // declared here. Every swatch already paints its own colors
+        // regardless of the screen behind them, so the practical effect was
+        // small, but the screen itself still fell back to the system
+        // default rather than the active theme.
+        .background(theme.background.ignoresSafeArea())
     }
 }
 

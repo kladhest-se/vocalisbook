@@ -244,7 +244,7 @@ struct CloudSyncStoreTests {
         let (cloud, _, _, db) = try makeStores()
         let sessions = SessionStore(database: db)
 
-        _ = try sessions.begin(bookRatingKey: "900", atMs: 0, rate: 1.0)
+        _ = try sessions.begin(bookRatingKey: "900", atMs: 0, rate: 1.0, sectionID: "srv:2")
         let open = try cloud.pendingChanges()
         let started = try #require(open.first { $0.kind == .listeningSession })
         #expect(started.fields["endedAt"] == nil)
@@ -281,7 +281,15 @@ struct CloudSyncStoreTests {
         // Queried for the day the session belongs to rather than through
         // `stats()`, whose windows are relative to today — that would make this
         // pass or fail depending on the date it runs on.
-        let day = try sessions.sessions(on: Date(timeIntervalSince1970: 1_700_000_000))
+        //
+        // `sectionID: "srv:2"`, not a placeholder: `applySession` now resolves
+        // the incoming session's section from the book it belongs to, looked
+        // up in the local `book` table — not from whatever section happens to
+        // be open on this device when the sync runs, since a session from
+        // another device says nothing about that. Book "900" was cached under
+        // `srv:2` in `makeStores()`, so that is the section this session
+        // should actually land in, and the only value that will find it.
+        let day = try sessions.sessions(on: Date(timeIntervalSince1970: 1_700_000_000), sectionID: "srv:2")
         let stored = try #require(day.first { $0.id == "from-the-mac" })
         #expect(stored.endMs == 3_600_000)
 
@@ -315,7 +323,7 @@ struct CloudSyncStoreTests {
         try library.cacheBookList(extra, sectionID: "srv:2")
 
         for index in 0..<5 {
-            _ = try sessions.begin(bookRatingKey: "90\(index)", atMs: 0, rate: 1.0)
+            _ = try sessions.begin(bookRatingKey: "90\(index)", atMs: 0, rate: 1.0, sectionID: "srv:2")
             try sessions.end(atMs: 1_000)
         }
         _ = try bookmarks.add(bookRatingKey: "900", absoluteMs: 1_000)

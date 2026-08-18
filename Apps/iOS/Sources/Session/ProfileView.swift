@@ -84,6 +84,12 @@ struct ProfileView: View {
                 .foregroundStyle(theme.tertiaryText)
         }
         .padding(18)
+        // The same gap found and fixed across `BookDetailView`, `PlayerView`,
+        // `PlayerBookmarksSheet`, and the sign-in pickers this session: every
+        // color in this view already comes from `theme`, but nothing set the
+        // background itself, so this medium-height sheet fell back to the
+        // system default regardless of which theme was active.
+        .background(theme.background.ignoresSafeArea())
         .task { await app.loadAccount() }
     }
 }

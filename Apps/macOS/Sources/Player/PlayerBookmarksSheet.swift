@@ -106,6 +106,13 @@ struct PlayerBookmarksSheet: View {
                 }
             }
             .navigationTitle("Bookmarks")
+            // Found in the same audit that added this to the iOS/iPadOS
+            // sibling of this exact file, and to `BookDetailView`,
+            // `PlayerView`, and the sign-in pickers on iOS: a `List` in its
+            // own `NavigationStack`, presented as a sheet, with every color
+            // already reading from `theme` except the background itself.
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Done") { dismiss() }

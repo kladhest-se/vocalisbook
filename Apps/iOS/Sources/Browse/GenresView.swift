@@ -101,6 +101,7 @@ struct GenreBooksView: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.theme) private var theme
     @State private var books: [BookRecord] = []
 
     private var columns: [GridItem] { .coverGrid(sizeClass) }
@@ -119,6 +120,12 @@ struct GenreBooksView: View {
         }
         .navigationTitle(genre)
         .navigationDestination(for: String.self) { BookDetailView(ratingKey: $0) }
+        // Found in the same audit pass as several other screens this
+        // session: a second struct in a file whose *other* struct was
+        // already theme-aware, which is exactly the shape that kept slipping
+        // past a file-level check — `GenresView` itself had a background,
+        // this screen it pushes to did not.
+        .background(theme.background.ignoresSafeArea())
         .task { reload() }
         .onChange(of: app.libraryRevision) { _, _ in reload() }
     }

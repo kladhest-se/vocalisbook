@@ -83,6 +83,13 @@ struct PlayerBookmarksSheet: View {
                 }
             }
             .navigationTitle("Bookmarks")
+            // Found in the same audit that added this to the iOS and macOS
+            // siblings of this exact file, and to several other screens on
+            // iOS: every color here already reads from `theme` except the
+            // background itself. `.scrollContentBackground` is iOS/macOS
+            // only — no equivalent exists on tvOS, so `.background` alone is
+            // what this platform has.
+            .background(theme.background.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

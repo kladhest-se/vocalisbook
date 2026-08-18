@@ -478,6 +478,7 @@ struct PlayerView: View {
 struct ChapterListSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -515,9 +516,9 @@ struct ChapterListSheet: View {
                                 switch standing {
                                 case .done:
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(theme.secondaryText)
                                 case .playing:
-                                    Image(systemName: "waveform").foregroundStyle(.tint)
+                                    Image(systemName: "waveform").foregroundStyle(theme.accent)
                                 case .ahead:
                                     Color.clear
                                 }
@@ -529,7 +530,7 @@ struct ChapterListSheet: View {
                                 Text(chapter.title).lineLimit(1)
                                 Text(Format.duration(ms: chapter.startMs))
                                     .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(theme.secondaryText)
                             }
                             Spacer()
                         }
@@ -539,6 +540,11 @@ struct ChapterListSheet: View {
                 }
                 .navigationTitle("Chapters")
                 .navigationBarTitleDisplayMode(.inline)
+                // Found in the same audit that fixed this exact gap on the
+                // macOS sibling of this struct, `ChapterList` — no theme
+                // awareness at all previously, colors included.
+                .scrollContentBackground(.hidden)
+                .background(theme.background.ignoresSafeArea())
                 .task {
                     // One hop first, so there are rows to scroll to. Scrolling
                     // an empty List does nothing and says nothing, which is

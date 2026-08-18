@@ -10,6 +10,7 @@ import PlatformShared
 /// only if nothing is pinned to the raw screen bounds.
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
     @State private var model = LibraryModel()
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: 48)]
@@ -56,7 +57,7 @@ struct LibraryView: View {
                              : (model.search.isEmpty
                                 ? "Fetching your library from Plex…"
                                 : "Nothing in this library matches “\(model.search)”."))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     }
                     .padding(.top, 80)
                 }
@@ -72,6 +73,12 @@ struct LibraryView: View {
             // only way in.
             .searchable(text: $model.search, prompt: "Title or author")
             .onChange(of: model.search) { _, _ in model.reload(app: app) }
+            // Found in the same audit that added this elsewhere: no theme
+            // awareness at all in this file previously, not even for text —
+            // the empty-state message above read `.secondary`, a system
+            // color, same as the sign-in pickers on iOS did before this
+            // pass.
+            .background(theme.background.ignoresSafeArea())
         }
         .task {
             model.reload(app: app)

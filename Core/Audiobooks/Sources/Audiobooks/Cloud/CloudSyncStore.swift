@@ -445,10 +445,33 @@ public struct CloudSyncStore: Sendable {
             return false
         }
 
+        // Identity first, rating key as what an older device would have sent
+        // — a rating key from another server names whatever book happens to
+        // hold that number here.
+        let bookRatingKey = (try record.fields["bookIdentity"]?.stringValue
+            .flatMap { try Self.localBook(for: $0, db: db) })
+            ?? record.fields["bookRatingKey"]?.stringValue ?? ""
+
+        // The section this device currently has open has nothing to do with
+        // which library a session from another device actually belongs to
+        // — a session synced while browsing library A is not thereby a
+        // session that happened in library A. The book itself already knows
+        // its own section, once resolved to this device's rating key, and
+        // that is the only honest source for this: nil when the book has not
+        // been cached here yet, which leaves the session unscoped exactly
+        // like any other row this device cannot yet place, rather than
+        // guessing from whatever happens to be on screen when the sync runs.
+        let librarySectionID = bookRatingKey.isEmpty ? nil : try Row.fetchOne(
+            db,
+            sql: "SELECT library_section_id FROM book WHERE rating_key = ?",
+            arguments: [bookRatingKey]
+        )?["library_section_id"] as String?
+
         try db.execute(sql: """
             INSERT INTO listening_session
-                (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate, revision, dirty)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate,
+                 revision, dirty, library_section_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             ON CONFLICT(id) DO UPDATE SET
                 book_rating_key = excluded.book_rating_key,
                 started_at = excluded.started_at,
@@ -457,21 +480,18 @@ public struct CloudSyncStore: Sendable {
                 end_ms = excluded.end_ms,
                 rate = excluded.rate,
                 revision = excluded.revision,
-                dirty = 0
+                dirty = 0,
+                library_section_id = excluded.library_section_id
             """, arguments: [
                 record.id,
-                // Identity first, rating key as what an older device would have
-                // sent — a rating key from another server names whatever book
-                // happens to hold that number here.
-                (try record.fields["bookIdentity"]?.stringValue
-                    .flatMap { try Self.localBook(for: $0, db: db) })
-                    ?? record.fields["bookRatingKey"]?.stringValue ?? "",
+                bookRatingKey,
                 record.fields["startedAt"]?.dateValue ?? Date(),
                 record.fields["endedAt"]?.dateValue,
                 record.fields["startMs"]?.intValue ?? 0,
                 record.fields["endMs"]?.intValue,
                 record.fields["rate"]?.doubleValue,
                 record.revision,
+                librarySectionID,
             ])
         return true
     }

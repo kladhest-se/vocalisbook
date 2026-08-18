@@ -407,7 +407,8 @@ final class AppModel {
             _ = try? self.sessions.begin(
                 bookRatingKey: bookRatingKey,
                 atMs: absoluteMs,
-                rate: self.player.rate
+                rate: self.player.rate,
+                sectionID: self.sectionID
             )
             self.startReportingNowPlaying()
         }

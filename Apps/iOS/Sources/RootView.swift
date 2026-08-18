@@ -201,7 +201,7 @@ struct MainTabs: View {
     private func content(for item: MainTab) -> some View {
         switch item {
         case .home: home.miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .browse: LibraryView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
+        case .books: LibraryView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .authors: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .series: SeriesView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .genres: GenresView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
@@ -477,18 +477,22 @@ enum MainTab: Hashable, CaseIterable {
     // sits in a reading order.
     //
     // Collections and Downloads used to be tabs here. Collections is folded
-    // into Browse as a filter — one of the ways of narrowing the same grid,
+    // into Books as a filter — one of the ways of narrowing the same grid,
     // not a separate way of looking at the library — and Downloads moved to a
     // toolbar button beside Settings, storage management rather than
     // browsing. Five tabs rather than seven is also what keeps iOS from
     // bucketing the last few into its own unthemed "More" screen, which only
     // ever appears past five.
-    case home, browse, authors, series, genres
+    //
+    // Named `books` rather than `browse`: this tab is specifically the full
+    // library grid, and "browse" described the action rather than the
+    // content — every other tab is just as much a way of browsing.
+    case home, books, authors, series, genres
 
     var title: String {
         switch self {
         case .home: "Home"
-        case .browse: "Browse"
+        case .books: "Books"
         case .authors: "Authors"
         case .series: "Series"
         case .genres: "Genres"
@@ -498,9 +502,14 @@ enum MainTab: Hashable, CaseIterable {
     var symbol: String {
         switch self {
         case .home: "house"
-        case .browse: "square.grid.2x2"
+        // `books.vertical` moved here from Series, and Series took a
+        // distinct icon in exchange — the two used to share a visual
+        // vocabulary close enough that a shelf of books stood for both "all
+        // the books" and "books grouped by series", which stopped being
+        // clear the moment the tab was actually named Books outright.
+        case .books: "books.vertical"
         case .authors: "person"
-        case .series: "books.vertical"
+        case .series: "square.stack"
         case .genres: "theatermasks"
         }
     }

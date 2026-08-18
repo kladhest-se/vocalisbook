@@ -424,7 +424,7 @@ final class HomeModel {
         // its own. This is for the parts that only change when the library does.
         recentlyAdded = (try? library.recentlyAdded(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
         recentlyFinished = (try? library.recentlyFinished(limit: 12, downloadedOnly: app.isOffline)) ?? []
-        stats = try? app.sessions.stats()
+        stats = try? app.sessions.stats(sectionID: app.sectionID)
     }
 
     func refresh(app: AppModel) async {

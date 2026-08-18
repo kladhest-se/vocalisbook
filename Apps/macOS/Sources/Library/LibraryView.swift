@@ -109,14 +109,21 @@ struct LibraryView: View {
                     // different furniture, and there is no reason to learn the
                     // app twice.
                     sidebarRow("Home", "house", tag: .home)
-                    sidebarRow("Browse", "square.grid.2x2", tag: .allBooks)
+                    // `books.vertical` moved here from Series, and Series took
+                    // a distinct icon — `square.stack` — in exchange. The two
+                    // used to share a visual vocabulary close enough that a
+                    // shelf of books stood for both "all the books" and
+                    // "books grouped by series", which was never especially
+                    // clear and stopped working at all once this row was
+                    // actually labeled Books.
+                    sidebarRow("Books", "books.vertical", tag: .allBooks)
 
                     // Directly under "All books": these are four ways into the
                     // same library, and a heading called "Library" said
                     // nothing while pushing three of them below a Continue
                     // listening section that grows.
                     sidebarRow("Authors", "person", tag: .authors)
-                    sidebarRow("Series", "books.vertical", tag: .series)
+                    sidebarRow("Series", "square.stack", tag: .series)
                     sidebarRow("Genres", "theatermasks", tag: .genres)
 
                     // One wordless divider rather than a second "Library"
@@ -878,7 +885,7 @@ enum SidebarItem: Hashable {
     var breadcrumbTitle: String {
         switch self {
         case .home: "Home"
-        case .allBooks: "Browse"
+        case .allBooks: "Books"
         case .authors: "Authors"
         case .series: "Series"
         case .genres: "Genres"

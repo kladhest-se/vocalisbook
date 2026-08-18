@@ -23,8 +23,19 @@ public struct SessionStore: Sendable {
     /// often enough to matter. Rather than discard it, it is closed at the
     /// position it had reached — the listening happened, even if the app never
     /// got to say so.
+    ///
+    /// `sectionID` is the currently-selected `library_section.id` — the same
+    /// composite `server:section` string `LibraryModel` and everything else
+    /// scoped to one library already reads from `AppModel.sectionID`. Stored
+    /// so history can later be shown only for the library it was actually
+    /// recorded under; see `Schema.registerV10` for why that was not already
+    /// true. `nil` when nothing is selected yet, which the row then carries
+    /// forward exactly like any other unscoped session — visible nowhere,
+    /// rather than guessed at.
     @discardableResult
-    public func begin(bookRatingKey: String, atMs: Int, rate: Float, now: Date = Date()) throws -> String {
+    public func begin(
+        bookRatingKey: String, atMs: Int, rate: Float, sectionID: String?, now: Date = Date()
+    ) throws -> String {
         try closeOpenSessions(at: now)
 
         let id = UUID().uuidString
@@ -32,10 +43,11 @@ public struct SessionStore: Sendable {
             try db.execute(
                 sql: """
                     INSERT INTO listening_session
-                        (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate, revision, dirty)
-                    VALUES (?, ?, ?, NULL, ?, NULL, ?, 1, 1)
+                        (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate,
+                         revision, dirty, library_section_id)
+                    VALUES (?, ?, ?, NULL, ?, NULL, ?, 1, 1, ?)
                     """,
-                arguments: [id, bookRatingKey, now, atMs, Double(rate)]
+                arguments: [id, bookRatingKey, now, atMs, Double(rate), sectionID]
             )
         }
         return id
@@ -77,13 +89,26 @@ public struct SessionStore: Sendable {
     /// A personal library's worth of sessions is small enough to compute in
     /// Swift; doing the calendar arithmetic in SQL would mean trusting SQLite's
     /// timezone handling, which is not worth it for a streak.
-    public func stats(now: Date = Date(), calendar: Calendar = .current) throws -> ListeningStats {
+    ///
+    /// Scoped to `sectionID` — see `begin(bookRatingKey:atMs:rate:sectionID:)`
+    /// for what that value is and why. `nil` returns empty stats rather than
+    /// querying with no filter at all: no library selected is not the same
+    /// question as "every session ever recorded regardless of library", and
+    /// answering it that way would be exactly the unscoped behavior this
+    /// exists to replace.
+    public func stats(
+        sectionID: String?, now: Date = Date(), calendar: Calendar = .current
+    ) throws -> ListeningStats {
+        guard let sectionID else {
+            return ListeningStats(currentStreak: 0, longestStreak: 0, thisWeekSeconds: 0, secondsPerDay: [:])
+        }
+
         let rows: [(start: Date, end: Date)] = try database.writer.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT started_at, ended_at FROM listening_session
-                WHERE ended_at IS NOT NULL
+                WHERE ended_at IS NOT NULL AND library_section_id = ?
                 ORDER BY started_at ASC
-                """)
+                """, arguments: [sectionID])
             .compactMap { row in
                 guard let start: Date = row["started_at"], let end: Date = row["ended_at"] else {
                     return nil
@@ -154,7 +179,14 @@ public struct SessionStore: Sendable {
     }
 
     /// Sessions for one day, newest first, for the history detail.
-    public func sessions(on day: Date, calendar: Calendar = .current) throws -> [SessionSummary] {
+    ///
+    /// Scoped the same way `stats(sectionID:...)` is, and for the same reason
+    /// — see its doc comment.
+    public func sessions(
+        on day: Date, sectionID: String?, calendar: Calendar = .current
+    ) throws -> [SessionSummary] {
+        guard let sectionID else { return [] }
+
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start)!
 
@@ -164,8 +196,9 @@ public struct SessionStore: Sendable {
                 FROM listening_session
                 LEFT JOIN book ON book.rating_key = listening_session.book_rating_key
                 WHERE started_at >= ? AND started_at < ? AND ended_at IS NOT NULL
+                  AND listening_session.library_section_id = ?
                 ORDER BY started_at DESC
-                """, arguments: [start, end])
+                """, arguments: [start, end, sectionID])
             .compactMap { row in
                 guard let started: Date = row["started_at"], let ended: Date = row["ended_at"] else {
                     return nil

@@ -28,11 +28,12 @@ public enum Schema {
         registerV7(&migrator)
         registerV8(&migrator)
         registerV9(&migrator)
+        registerV10(&migrator)
         return migrator
     }
 
     /// Current version, for logging and for the tvOS cache-validity check.
-    public static let currentVersion = "v9_backfill_identity"
+    public static let currentVersion = "v10_session_library_scope"
 
     private static func registerV1(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v1_initial") { db in
@@ -482,6 +483,43 @@ public enum Schema {
                 WHERE identity_key IS NULL
                   AND instr(library_section_id, ':') > 1
                 """)
+        }
+    }
+
+    /// Scopes history to the library it was recorded under.
+    ///
+    /// `listening_session` never carried a section — nothing about it needed
+    /// one while `book` stayed populated for as long as a session referencing
+    /// it was interesting. Signing out changed that: `purgeMetadataCache()`
+    /// cascades away `book` deliberately, on purpose, so a session recorded
+    /// under a server nobody is signed into any more still has to mean
+    /// something, and it does — the streak and the minutes are real regardless
+    /// of whether the title can still be looked up. But it also meant every
+    /// session was visible from *every* library, forever, with no way to tell
+    /// "recorded here" from "recorded somewhere else entirely", which is the
+    /// opposite of what Continue Listening already does by accident: that
+    /// list is implicitly scoped, because the `book` rows it joins against are
+    /// exactly the ones the cascade left behind.
+    ///
+    /// Nullable, and left null for every row that already exists — there is
+    /// no way to know which library an old session belonged to after the
+    /// fact, and guessing would be worse than admitting it is not known. A
+    /// null here simply never matches any current section, which puts old,
+    /// unscoped sessions in the same position as ones from a library that is
+    /// no longer signed into: present in the database, absent from every
+    /// screen, until whichever exact library they belonged to is current
+    /// again — which for a genuinely unscoped row is never, and that is the
+    /// honest outcome rather than a special case to work around.
+    private static func registerV10(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v10_session_library_scope") { db in
+            try db.alter(table: "listening_session") { t in
+                t.add(column: "library_section_id", .text)
+            }
+            try db.create(
+                index: "session_by_section_started",
+                on: "listening_session",
+                columns: ["library_section_id", "started_at"]
+            )
         }
     }
 }

@@ -26,11 +26,11 @@ struct SessionStoreTests {
         let (store, _) = try makeStore()
         let start = Date(timeIntervalSince1970: 1_700_000_000)
 
-        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1.5, now: start)
+        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1.5, sectionID: "test-section", now: start)
         // Ninety minutes of book in one hour, at 1.5x.
         try store.end(atMs: 5_400_000, now: start.addingTimeInterval(3600))
 
-        let stats = try store.stats(now: start.addingTimeInterval(3600), calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: start.addingTimeInterval(3600), calendar: calendar)
         let today = calendar.startOfDay(for: start)
         #expect(stats.secondsPerDay[today] == 3600, "the hour, not the ninety minutes")
     }
@@ -42,11 +42,11 @@ struct SessionStoreTests {
 
         for offset in [-2, -1, 0] {
             let start = day(offset, from: now)
-            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
             try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
         }
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
         #expect(stats.currentStreak == 3)
         #expect(stats.longestStreak == 3)
     }
@@ -59,11 +59,11 @@ struct SessionStoreTests {
         // Four days, then nothing, then today.
         for offset in [-6, -5, -4, -3, 0] {
             let start = day(offset, from: now)
-            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
             try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
         }
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
         #expect(stats.currentStreak == 1)
         #expect(stats.longestStreak == 4)
     }
@@ -77,11 +77,11 @@ struct SessionStoreTests {
 
         for offset in [-2, -1] {
             let start = day(offset, from: now)
-            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
             try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
         }
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
         #expect(stats.currentStreak == 2)
     }
 
@@ -92,13 +92,13 @@ struct SessionStoreTests {
         let (store, _) = try makeStore()
         let start = Date(timeIntervalSince1970: 1_700_000_000)
 
-        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
         // No end. Three days later, another session opens.
         let later = start.addingTimeInterval(3 * 86_400)
-        try store.begin(bookRatingKey: "901", atMs: 0, rate: 1, now: later)
+        try store.begin(bookRatingKey: "901", atMs: 0, rate: 1, sectionID: "test-section", now: later)
         try store.end(atMs: 600_000, now: later.addingTimeInterval(600))
 
-        let stats = try store.stats(now: later, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: later, calendar: calendar)
         #expect(stats.secondsPerDay[calendar.startOfDay(for: start)] == nil)
         #expect(stats.currentStreak == 1)
     }
@@ -108,12 +108,12 @@ struct SessionStoreTests {
         let (store, _) = try makeStore()
         let start = Date(timeIntervalSince1970: 1_700_000_000)
 
-        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
         try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
-        try store.begin(bookRatingKey: "900", atMs: 600_000, rate: 1, now: start.addingTimeInterval(1800))
+        try store.begin(bookRatingKey: "900", atMs: 600_000, rate: 1, sectionID: "test-section", now: start.addingTimeInterval(1800))
         try store.end(atMs: 1_200_000, now: start.addingTimeInterval(2400))
 
-        let sessions = try store.sessions(on: start, calendar: calendar)
+        let sessions = try store.sessions(on: start, sectionID: "test-section", calendar: calendar)
         #expect(sessions.count == 2)
         #expect(sessions.first?.startedAt ?? .distantPast > sessions.last?.startedAt ?? .distantFuture)
         #expect(sessions.allSatisfy { $0.seconds == 600 })
@@ -127,10 +127,10 @@ struct SessionStoreTests {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
 
         let start = day(-2, from: now)
-        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
         try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
         let week = stats.recentDays(7, now: now, calendar: calendar)
         #expect(week.count == 7)
         #expect(week.filter { $0.seconds > 0 }.count == 1)
@@ -147,11 +147,11 @@ struct SessionStoreTests {
         // Three days spread wider than a week: 10 minutes, 30, then 5.
         for (offset, minutes) in [(-20, 10), (-9, 30), (-1, 5)] {
             let start = day(offset, from: now)
-            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
             try store.end(atMs: 0, now: start.addingTimeInterval(Double(minutes) * 60))
         }
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
 
         #expect(stats.allTimeSeconds == 45 * 60)
         #expect(stats.daysListened == 3)
@@ -167,11 +167,11 @@ struct SessionStoreTests {
 
         for (offset, minutes) in [(-20, 10), (-9, 30), (-1, 5)] {
             let start = day(offset, from: now)
-            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+            try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
             try store.end(atMs: 0, now: start.addingTimeInterval(Double(minutes) * 60))
         }
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
         let best = try #require(stats.bestDay)
 
         #expect(best.seconds == 30 * 60)
@@ -184,6 +184,7 @@ struct SessionStoreTests {
     func noBestDayYet() throws {
         let (store, _) = try makeStore()
         let stats = try store.stats(
+            sectionID: "test-section",
             now: Date(timeIntervalSince1970: 1_700_000_000),
             calendar: calendar
         )
@@ -201,12 +202,12 @@ struct SessionStoreTests {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let start = day(-2, from: now)
 
-        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, now: start)
+        try store.begin(bookRatingKey: "900", atMs: 0, rate: 1, sectionID: "test-section", now: start)
         try store.end(atMs: 0, now: start.addingTimeInterval(600))
-        try store.begin(bookRatingKey: "901", atMs: 0, rate: 1, now: start.addingTimeInterval(3_600))
+        try store.begin(bookRatingKey: "901", atMs: 0, rate: 1, sectionID: "test-section", now: start.addingTimeInterval(3_600))
         try store.end(atMs: 0, now: start.addingTimeInterval(4_200))
 
-        let stats = try store.stats(now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
 
         #expect(stats.daysListened == 1)
         #expect(stats.allTimeSeconds == 1_200)

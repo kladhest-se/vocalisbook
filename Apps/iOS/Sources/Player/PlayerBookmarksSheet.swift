@@ -104,6 +104,14 @@ struct PlayerBookmarksSheet: View {
             }
             .navigationTitle("Bookmarks")
             .navigationBarTitleDisplayMode(.inline)
+            // The same gap found and fixed on `BookDetailView` and
+            // `PlayerView` earlier this session, in a fourth place: a
+            // `List` inside its own `NavigationStack`, presented as a sheet,
+            // with text colored from `theme` throughout but no background of
+            // its own — falling back to the system default regardless of
+            // which theme was active.
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

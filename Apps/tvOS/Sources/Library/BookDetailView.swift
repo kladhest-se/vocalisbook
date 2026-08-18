@@ -6,6 +6,7 @@ import PlatformShared
 struct BookDetailView: View {
     let ratingKey: String
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
     @State private var model = BookDetailModel()
     @State private var nextBook: String?
 
@@ -19,7 +20,7 @@ struct BookDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(model.book?.title ?? "").font(.system(size: 48, weight: .semibold))
                     if let author = model.book?.author {
-                        Text(author).font(.title2).foregroundStyle(.secondary)
+                        Text(author).font(.title2).foregroundStyle(theme.secondaryText)
                     }
                     // Co-authors: the primary author above is Plex's own
                     // artist link, one name only. The rest of a multi-author
@@ -31,32 +32,32 @@ struct BookDetailView: View {
                     if !model.credits.authors.isEmpty {
                         Text("With \(model.credits.authors.joined(separator: ", "))")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     }
                     // Narrator and series: Plex has no field for either, so
                     // VocalisMeta puts them in Style and Mood.
                     if !model.credits.narrators.isEmpty {
                         Text("Read by \(model.credits.narrators.joined(separator: ", "))")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     }
                     if !model.credits.series.isEmpty {
                         Text(model.seriesLine)
                             .font(.callout)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(theme.tertiaryText)
                     }
                     // Only when known: absence means unknown.
                     if let edition = model.credits.editionLine {
                         Text(edition)
                             .font(.callout)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(theme.tertiaryText)
                     }
                     HStack(spacing: 20) {
                         if let duration = model.durationText {
-                            Text(duration).foregroundStyle(.secondary)
+                            Text(duration).foregroundStyle(theme.secondaryText)
                         }
                         if let progress = model.progressText(app: app) {
-                            Text(progress).foregroundStyle(.tertiary)
+                            Text(progress).foregroundStyle(theme.tertiaryText)
                         }
                     }
 
@@ -115,7 +116,7 @@ struct BookDetailView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Bookmarks")
                                 .font(.headline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(theme.secondaryText)
 
                             // `id: \.id`, as the phone's list does.
                             //
@@ -141,7 +142,7 @@ struct BookDetailView: View {
                                             Spacer()
                                             Text(Format.duration(ms: bookmark.absoluteMs))
                                                 .monospacedDigit()
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(theme.secondaryText)
                                         }
                                     }
 
@@ -183,7 +184,7 @@ struct BookDetailView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Next in \(next.seriesTitle)")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(theme.secondaryText)
                                 Text(next.book.title).font(.headline).lineLimit(1)
                             }
                             Spacer(minLength: 0)
@@ -203,7 +204,7 @@ struct BookDetailView: View {
                     if let summary = model.book?.summary, !summary.isEmpty {
                         Text(summary)
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                             .lineLimit(8)
                             .padding(.top, 8)
                     }
@@ -256,6 +257,13 @@ struct BookDetailView: View {
             model.reloadBookmarks(app: app, ratingKey: ratingKey)
         }
         .overlay { if model.isLoading && model.book == nil { ProgressView() } }
+        // Found in the same audit pass that fixed this exact gap across the
+        // rest of this session: no theme awareness anywhere in this file
+        // previously, colors included — the co-author line added earlier
+        // this session matched the surrounding `.secondary` pattern rather
+        // than catching the gap, since nothing nearby used `theme` yet to
+        // signal it was missing.
+        .background(theme.background.ignoresSafeArea())
     }
 }
 
@@ -264,6 +272,7 @@ struct ChapterListView: View {
     let model: BookDetailModel
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ScrollView {
@@ -298,7 +307,7 @@ struct ChapterListView: View {
                             Spacer()
                             Text(Format.duration(ms: chapter.startMs))
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(theme.secondaryText)
                         }
                         .padding(.vertical, 8)
                     }
@@ -306,6 +315,7 @@ struct ChapterListView: View {
             }
             .padding(.vertical, 40)
         }
+        .background(theme.background.ignoresSafeArea())
     }
 }
 

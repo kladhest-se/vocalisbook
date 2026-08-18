@@ -274,6 +274,7 @@ struct PlayerBar: View {
 
 struct ChapterList: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
 
     var body: some View {
         // See the iOS sheet: opens at the chapter playing rather than the first.
@@ -295,9 +296,9 @@ struct ChapterList: View {
                         Group {
                             switch standing {
                             case .done:
-                                Image(systemName: "checkmark").foregroundStyle(.secondary)
+                                Image(systemName: "checkmark").foregroundStyle(theme.secondaryText)
                             case .playing:
-                                Image(systemName: "waveform").foregroundStyle(.tint)
+                                Image(systemName: "waveform").foregroundStyle(theme.accent)
                             case .ahead:
                                 Color.clear
                             }
@@ -309,7 +310,7 @@ struct ChapterList: View {
                             Text(chapter.title).lineLimit(1)
                             Text(Format.duration(ms: chapter.startMs))
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(theme.secondaryText)
                         }
                         Spacer()
                     }
@@ -324,5 +325,13 @@ struct ChapterList: View {
                 scroll.scrollTo(current.id, anchor: .center)
             }
         }
+        // Found in the same audit that fixed several other popovers and
+        // sheets this session: no theme awareness at all previously, colors
+        // included. `ProfileView`, shown in a popover of its own elsewhere in
+        // this same file, already proved a themed background renders
+        // correctly in that context — this follows the same, already-proven
+        // pattern rather than a new one.
+        .scrollContentBackground(.hidden)
+        .background(theme.background.ignoresSafeArea())
     }
 }

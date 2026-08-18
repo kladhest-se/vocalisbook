@@ -246,6 +246,12 @@ if PlatformCapabilities.localStoreIsDurable {
         }
         .task(id: ratingKey) { await model.load(app: app, ratingKey: ratingKey) }
         .overlay { if model.isLoading && model.book == nil { ProgressView() } }
+        // Found in the same audit that fixed this exact gap on this view's
+        // iOS sibling: every color here already reads from `theme`, but
+        // nothing set the background, so this screen — reached from the
+        // Books sidebar row — fell back to the system default regardless of
+        // which theme was active.
+        .background(theme.background.ignoresSafeArea())
     }
 }
 

@@ -18,6 +18,7 @@ import PlexKit
 struct ServerPickerView: View {
     let servers: [PlexResource]
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
     @State private var error: String?
 
     var body: some View {
@@ -37,11 +38,19 @@ struct ServerPickerView: View {
                         Text(server.name)
                         Text(server.ownership)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.secondaryText)
                     }
                 }
             }
             .navigationTitle("Choose a server")
+            // Found in the same pass that added this to `BookDetailView`,
+            // `PlayerView` and `PlayerBookmarksSheet` — a sign-in screen with
+            // no theme awareness at all, not just a missing background: text
+            // read `.secondary`, a system color, rather than anything from
+            // `theme`. Both fixed together rather than leaving the color
+            // half of the same gap in place.
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
             .toolbar {
                 Button("Sign out") { app.signOut() }
             }
@@ -57,6 +66,7 @@ struct ServerPickerView: View {
 struct LibraryPickerView: View {
     let sections: [PlexLibrarySection]
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -72,6 +82,9 @@ struct LibraryPickerView: View {
             // Audiobooks live in a music-type library, so anything else has
             // already been filtered out before this screen is shown.
             .listStyle(.insetGrouped)
+            // Same gap as its sibling above, fixed the same way.
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
         }
     }
 }

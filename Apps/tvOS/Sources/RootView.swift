@@ -92,21 +92,27 @@ struct MainTabs: View {
         @Bindable var app = app
 
         TabView(selection: $app.selectedTab) {
-            // Home is where you left off; Browse is every book.
+            // Home is where you left off; Books is every book.
             //
             // These were the wrong way round: Home was the library, complete
-            // with a search field, and Browse was the same grid without one.
+            // with a search field, and this tab was the same grid without one.
             HomeView()
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(MainTab.home)
             LibraryView()
-                .tabItem { Label("Browse", systemImage: "square.grid.2x2") }
-                .tag(MainTab.browse)
+                // `books.vertical` moved here from Series, and Series took a
+                // distinct icon — `square.stack` — in exchange. The two used
+                // to share a visual vocabulary close enough that a shelf of
+                // books stood for both "all the books" and "books grouped by
+                // series", which stopped being clear once this tab was
+                // actually named Books.
+                .tabItem { Label("Books", systemImage: "books.vertical") }
+                .tag(MainTab.books)
             AuthorsView()
                 .tabItem { Label("Authors", systemImage: "person") }
                 .tag(MainTab.authors)
             SeriesView()
-                .tabItem { Label("Series", systemImage: "books.vertical") }
+                .tabItem { Label("Series", systemImage: "square.stack") }
                 .tag(MainTab.series)
 
             // Genres sits after Series: all three group the same books, and
@@ -155,5 +161,5 @@ struct MainTabs: View {
 /// Pressing play jumps straight to the player rather than leaving you on the
 /// book screen wondering whether anything happened.
 enum MainTab: Hashable {
-    case home, browse, authors, series, genres, history, settings, nowPlaying
+    case home, books, authors, series, genres, history, settings, nowPlaying
 }

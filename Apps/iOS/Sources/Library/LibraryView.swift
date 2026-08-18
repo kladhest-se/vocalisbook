@@ -27,7 +27,6 @@ struct LibraryView: View {
             grid
                 .navigationTitle("Library")
                 .accountToolbar()
-                .toolbar { downloadedFilter }
                 .navigationDestination(item: $selection) { ratingKey in
                     BookDetailView(ratingKey: ratingKey)
                 }
@@ -38,31 +37,15 @@ struct LibraryView: View {
         }
     }
 
-    /// Narrows the grid to books already on this device, independent of
-    /// offline mode — the two ask different questions. Offline mode says
-    /// "stop reaching the server at all"; this says "show me what I would
-    /// keep if I turned that on", which is exactly what somebody deciding
-    /// what to remove before a trip wants to see while still online.
-    ///
-    /// Collections was here too, briefly, as a second filter beside this one
-    /// — folded back out rather than kept half-finished. It wants its own
-    /// design, not a slot borrowed from this one, and may return in a later
-    /// release.
-    private var downloadedFilter: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                model.showingDownloadedOnly.toggle()
-                model.reload(app: app)
-            } label: {
-                Label(
-                    "Downloaded",
-                    systemImage: model.showingDownloadedOnly
-                        ? "arrow.down.circle.fill" : "arrow.down.circle"
-                )
-            }
-            .tint(model.showingDownloadedOnly ? theme.accent : nil)
-        }
-    }
+    /// Removed: this filter and the new persistent Downloads button, once
+    /// both were in the toolbar at once, read as two ways to reach the same
+    /// place — the arrow-down icon in both, one leading and one trailing.
+    /// They were never quite the same thing (this narrowed the grid in
+    /// place; Downloads opens a separate management screen), but that
+    /// distinction was not visible at a glance, and a toolbar with two
+    /// download-shaped buttons is a worse toolbar regardless of what each
+    /// one technically does. Offline mode alone now drives `downloadedOnly`
+    /// below — see `LibraryModel.reload(app:)`.
 
     /// The grid itself, which is the same in both shapes — only what happens
     /// when a cover is tapped differs, and that is `selection` either way.
@@ -109,11 +92,11 @@ struct LibraryView: View {
                         .padding(.top, 60)
                     } else {
                         ContentUnavailableView(
-                            model.showingDownloadedOnly ? "Nothing downloaded"
+                            app.isOffline ? "Nothing downloaded"
                                 : model.search.isEmpty ? "No books yet" : "Nothing matched",
-                            systemImage: model.showingDownloadedOnly ? "arrow.down.circle" : "books.vertical",
+                            systemImage: app.isOffline ? "arrow.down.circle" : "books.vertical",
                             description: Text(
-                                model.showingDownloadedOnly
+                                app.isOffline
                                 ? "Nothing in your library is downloaded to this device yet."
                                 : model.search.isEmpty
                                 ? "Pull down to fetch your library from Plex."
@@ -139,6 +122,16 @@ struct LibraryView: View {
         // `libraryRevision` still matters — finishing a book changes what the
         // grid should show.
         .onChange(of: app.libraryRevision) { _, _ in model.reload(app: app) }
+        // Added alongside removing the downloaded-only toggle above: that
+        // button called `model.reload(app:)` directly in its own action,
+        // which was the only thing making a switch between filtered and
+        // unfiltered take effect immediately. `isOffline`'s own `didSet`
+        // does not bump `libraryRevision` or anything else this screen
+        // already listens to, so without this the grid would only catch up
+        // with offline mode next time something else happened to trigger a
+        // reload — the search field changing, say — rather than the moment
+        // offline mode actually changed.
+        .onChange(of: app.isOffline) { _, _ in model.reload(app: app) }
     }
 }
 
@@ -147,10 +140,6 @@ struct LibraryView: View {
 final class LibraryModel {
     private(set) var books: [BookRecord] = []
     private(set) var isRefreshing = false
-
-    /// Narrows the grid to books already on this device — see `downloadedFilter`
-    /// for why this is separate from `app.isOffline` rather than reusing it.
-    var showingDownloadedOnly = false
 
     /// Whether this refresh has already put something on screen.
     ///
@@ -185,11 +174,12 @@ final class LibraryModel {
             loadFailed = false
             return
         }
-        // Either condition narrows to what is on disk: offline mode says
-        // nothing here should touch the network, and this button says show me
-        // what I would keep if it did. Both true is not a conflict — the
-        // grid is just downloaded-only for two reasons instead of one.
-        let downloadedOnly = app.isOffline || showingDownloadedOnly
+        // Offline mode is now the only reason this narrows to what is on
+        // disk — the standalone toggle that used to sit beside it in the
+        // toolbar was removed as a duplicate of the new persistent Downloads
+        // button, which opens a full management screen instead of filtering
+        // in place.
+        let downloadedOnly = app.isOffline
         do {
             books = try search.isEmpty
                 ? library.books(sectionID: sectionID, downloadedOnly: downloadedOnly)

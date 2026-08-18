@@ -226,6 +226,6 @@ final class HomeModel {
             downloadedOnly: app.isOffline
         )) ?? []
 
-        stats = try? app.sessions.stats()
+        stats = try? app.sessions.stats(sectionID: app.sectionID)
     }
 }

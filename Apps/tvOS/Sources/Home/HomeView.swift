@@ -216,6 +216,6 @@ final class HomeModel {
         // its own. This is for the parts that only change when the library does.
         recentlyAdded = (try? library.recentlyAdded(sectionID: sectionID, limit: 12)) ?? []
         recentlyFinished = (try? library.recentlyFinished(limit: 12)) ?? []
-        stats = try? app.sessions.stats()
+        stats = try? app.sessions.stats(sectionID: app.sectionID)
     }
 }
