@@ -21,27 +21,37 @@ private enum Tier: Equatable {
     case withControls
     case full
 
+    /// Thresholds worked out from element heights, not guessed a second time.
+    ///
+    /// The first attempt at these numbers (220/340/460) only ever scaled the
+    /// cover — everything else in a tier's content is fixed height, and as
+    /// the window shrank toward the *bottom* of a tier's own range, that
+    /// fixed content increasingly did not fit in what was left over. Checked
+    /// in Python against rough element heights this time: `withProgress`
+    /// needs about 225pt for a legible cover, `withControls` about 361,
+    /// `full` about 517. These thresholds are each comfortably above the
+    /// corresponding number, but the estimates themselves are still just
+    /// that — font sizes and control heights guessed from their SwiftUI
+    /// modifiers, not measured against a running app.
     init(height: CGFloat) {
         switch height {
-        case ...220: self = .artOnly
-        case ...340: self = .withProgress
-        case ...460: self = .withControls
+        case ...240: self = .artOnly
+        case ...380: self = .withProgress
+        case ...540: self = .withControls
         default: self = .full
         }
     }
 
     /// How much of the available height the cover claims before the rest of
     /// the tier's own elements ask for theirs — decreasing as more of them
-    /// need room. A rough division, not a precisely measured one: nothing
-    /// here has run against a real window to check the numbers against, and
-    /// `artOnly`'s case is unused, since that tier never reaches the code
-    /// path this feeds — the cover *is* the whole view there.
+    /// need room. `artOnly`'s case is unused, since that tier never reaches
+    /// the code path this feeds; the cover *is* the whole view there.
     var coverFraction: CGFloat {
         switch self {
         case .artOnly: 1.0
-        case .withProgress: 0.56
-        case .withControls: 0.42
-        case .full: 0.35
+        case .withProgress: 0.5
+        case .withControls: 0.38
+        case .full: 0.32
         }
     }
 }
@@ -64,7 +74,7 @@ struct CompactPlayerView: View {
                 // up but the art itself, so that is where it stops.
                 //
                 //   full         cover, scrubber, titles, transport,
-                //                secondary, and chapters past 520pt
+                //                secondary, and chapters past 640pt
                 //   withControls cover, scrubber, titles, transport
                 //   withProgress cover, scrubber, one line of title
                 //   artOnly      the cover alone, filling every point of
@@ -138,7 +148,7 @@ struct CompactPlayerView: View {
                             // Chapters need the most room, and give it up
                             // first — the last thing added going up, and the
                             // first thing dropped going down.
-                            if height > 520 {
+                            if height > 640 {
                                 chapters
                             }
                         }
@@ -187,6 +197,17 @@ struct CompactPlayerView: View {
         .onAppear {
             WindowSizer.applyChromeWhenReady(compact: true)
         }
+        // The one thing observed reliably being different when the title bar
+        // has come back is playback stopping — a book finishing, or being
+        // stopped, while the window is already the small one. `onAppear`
+        // fires once, for this view's own lifetime, and nothing else here
+        // changes that lifetime when a book starts or ends; whatever the
+        // exact mechanism turns out to be, re-asserting compact chrome at
+        // the one moment content meaningfully changes shape is cheap and
+        // cannot make an already-correct title bar wrong.
+        .onChange(of: app.player.bookRatingKey) { _, _ in
+            WindowSizer.applyChromeWhenReady(compact: true)
+        }
     }
 
     private var header: some View {
@@ -226,19 +247,44 @@ struct CompactPlayerView: View {
         .padding(.vertical, 10)
     }
 
+    /// Scaled against the available height for the same reason the playing
+    /// state is: fixed sizes here overflowed the window the moment it could
+    /// actually reach the sizes `windowMinSize` now allows, which nothing
+    /// caught earlier only because nothing before this could get that small
+    /// to expose it.
+    ///
+    /// `Spacer(minLength: 0)` rather than a bare `Spacer()` — a bare one has
+    /// an implicit floor of its own and was part of what would not compress,
+    /// fighting a `VStack` that already had too little room to give it.
     private var nothingPlaying: some View {
-        VStack(spacing: 14) {
-            Spacer()
-            Image(systemName: "headphones")
-                .font(.system(size: 40))
-                .foregroundStyle(theme.tertiaryText)
-            Text("Nothing playing")
-                .foregroundStyle(theme.secondaryText)
-            Button("Open the library") { WindowSizer.expand() }
-                .buttonStyle(.borderedProminent)
-            Spacer()
+        GeometryReader { geometry in
+            let height = geometry.size.height
+            VStack(spacing: max(6, min(14, height * 0.06))) {
+                Spacer(minLength: 0)
+                Image(systemName: "headphones")
+                    .font(.system(size: max(18, min(40, height * 0.18))))
+                    .foregroundStyle(theme.tertiaryText)
+                // Text and the button are the first things to go, in that
+                // order, the same principle as the playing state's tiers:
+                // give up the least useful thing first. The icon alone still
+                // answers "is something supposed to be here" even with
+                // nothing else on screen.
+                if height > 130 {
+                    Text("Nothing playing")
+                        .font(.callout)
+                        .foregroundStyle(theme.secondaryText)
+                        .lineLimit(1)
+                }
+                if height > 95 {
+                    Button("Open the library") { WindowSizer.expand() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(height > 200 ? .regular : .small)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var cover: some View {
