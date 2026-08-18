@@ -48,7 +48,7 @@ public enum WindowSizer {
     /// content itself already handles "do not show the library at a
     /// too-narrow width" by switching to `CompactPlayerView` well before this
     /// floor is reached, which is what makes one small value safe for both.
-    nonisolated private static let windowMinSize = NSSize(width: 140, height: 160)
+    nonisolated public static let windowMinSize = NSSize(width: 140, height: 160)
 
     private static var mainWindow: NSWindow? {
         // The settings window and the menu bar popover are also windows; the one

@@ -21,6 +21,22 @@ struct VocalisBookApp: App {
                 // Narrow enough to reach the compact player. The old floor of
                 // 900 made that layout unreachable by dragging, which is the
                 // only way it is meant to be reached.
+                //
+                // `WindowSizer.windowMinSize`, not `WindowSizer.miniSize` —
+                // this was 380×480 for a long time, chosen back when
+                // `compactWidth` (620) was the only threshold the compact
+                // player had. Once the tier system inside it grew a genuine
+                // minimum of its own — the ultra-minimal, art-filling state
+                // at 140×160 — this constraint was never revisited to match,
+                // and stayed the real, binding floor regardless: no fix to
+                // anything inside `CompactPlayerView` could ever have
+                // mattered, because the window was never being handed a size
+                // small enough to reach the code paths those fixes were
+                // written for. `WindowSizer.applyChrome`'s own
+                // `NSWindow.minSize` was set correctly this whole time and
+                // was consistently the loser against this larger, declarative
+                // one.
+                //
                 // Ideal as well as minimum.
                 //
                 // A minimum on its own let the window open at that minimum, so
@@ -28,9 +44,9 @@ struct VocalisBookApp: App {
                 // The ideal is what `defaultSize` and a first launch use; the
                 // minimum only says how small dragging may go.
                 .frame(
-                    minWidth: WindowSizer.miniSize.width,
+                    minWidth: WindowSizer.windowMinSize.width,
                     idealWidth: WindowSizer.regularSize.width,
-                    minHeight: 480,
+                    minHeight: WindowSizer.windowMinSize.height,
                     idealHeight: WindowSizer.regularSize.height
                 )
                 .task { await app.start() }
