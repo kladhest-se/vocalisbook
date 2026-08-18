@@ -237,6 +237,9 @@ struct SettingsView: View {
                     Link(destination: AppIdentity.repository) {
                         LabeledContent("Source", value: "github.com/kladhest-se/vocalisbook")
                     }
+                    Link(destination: URL(string: "mailto:\(AppIdentity.contactEmail)")!) {
+                        LabeledContent("Contact", value: AppIdentity.contactEmail)
+                    }
 
                     Text(AppIdentity.disclaimer)
                         .font(.footnote)

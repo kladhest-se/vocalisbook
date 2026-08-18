@@ -194,7 +194,7 @@ Publishable as-is at a URL of your choosing.
 > iCloud account can be removed from iCloud settings, and data on your Plex
 > server is governed by Plex's own terms.
 >
-> Questions: <https://github.com/kladhest-se/vocalisbook>
+> Questions: <https://github.com/kladhest-se/vocalisbook>, or kladhest@tutamail.com
 
 ## Before pressing Upload
 

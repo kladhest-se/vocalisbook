@@ -158,6 +158,7 @@ struct SettingsView: View {
                         Text("\(AppIdentity.name) \(AppIdentity.versionAndBuild)")
                         Text("By \(AppIdentity.author)")
                         Text(AppIdentity.repository.absoluteString)
+                        Text(AppIdentity.contactEmail)
                         Text(AppIdentity.disclaimer)
                             .font(.caption)
                             .foregroundStyle(theme.tertiaryText)

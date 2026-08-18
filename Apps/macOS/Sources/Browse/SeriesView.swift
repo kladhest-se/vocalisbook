@@ -14,58 +14,67 @@ import PlatformShared
 /// agent's contract is explicit that collections are user data and a series
 /// should not be derived from them alone.
 ///
-/// A card grid rather than a table, matching `AuthorsView` and `GenresView`:
-/// a name and a count told you nothing until you clicked it, and the cover art
-/// was already being fetched either way.
+/// No `NavigationStack`, for the reason `AuthorsView` explains at length: local
+/// state instead of a push means no automatic back chevron in the title bar,
+/// and leaving this screen through the sidebar always comes back to the grid
+/// rather than wherever it was left.
 struct SeriesView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var series: [SeriesSummary] = []
+    @State private var selectedSeries: String?
+    let open: (String) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
 
     var body: some View {
-        // A `NavigationStack` of its own, for the reason `GenresView` explains:
-        // this is shown in a column, and a column is not a stack.
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 24) {
-                    ForEach(series) { entry in
-                        NavigationLink(value: SeriesRoute(name: entry.name)) {
-                            SeriesTile(series: entry)
-                        }
-                        .buttonStyle(.plain)
-                    }
+        Group {
+            if let selectedSeries {
+                VStack(spacing: 0) {
+                    BackButton(title: "Series") { self.selectedSeries = nil }
+                    SeriesBooksView(series: selectedSeries, open: open)
                 }
-                .padding(20)
-                .padding(.bottom, 20)
-            }
-            .background(theme.background.ignoresSafeArea())
-            .navigationTitle("Series")
-            .navigationDestination(for: SeriesRoute.self) { SeriesBooksView(series: $0.name) }
-            .overlay {
-                if let activity = app.activity {
-                    // Working, and saying so: this is a request per series, and
-                    // an empty screen for a minute reads as a broken one. The
-                    // "No series" message below is true only when nothing is
-                    // being fetched.
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text(activity)
-                            .font(.callout)
-                            .foregroundStyle(theme.secondaryText)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 24) {
+                        ForEach(series) { entry in
+                            Button {
+                                selectedSeries = entry.name
+                            } label: {
+                                SeriesTile(series: entry)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                } else if series.isEmpty {
-                    // Named for the cause. A library no agent has matched carries
-                    // no series tags, and refreshing here will never produce any.
-                    ContentUnavailableView(
-                        "No series",
-                        systemImage: "books.vertical",
-                        description: Text(
-                            "Series come from the metadata agent. Books it has not "
-                            + "matched, or that belong to no series, carry none."
+                    .padding(20)
+                    .padding(.bottom, 20)
+                }
+                .background(theme.background.ignoresSafeArea())
+                .navigationTitle("Series")
+                .overlay {
+                    if let activity = app.activity {
+                        // Working, and saying so: this is a request per series, and
+                        // an empty screen for a minute reads as a broken one. The
+                        // "No series" message below is true only when nothing is
+                        // being fetched.
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(activity)
+                                .font(.callout)
+                                .foregroundStyle(theme.secondaryText)
+                        }
+                    } else if series.isEmpty {
+                        // Named for the cause. A library no agent has matched carries
+                        // no series tags, and refreshing here will never produce any.
+                        ContentUnavailableView(
+                            "No series",
+                            systemImage: "books.vertical",
+                            description: Text(
+                                "Series come from the metadata agent. Books it has not "
+                                + "matched, or that belong to no series, carry none."
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -117,6 +126,7 @@ struct SeriesTile: View {
 /// badged onto a card would be.
 struct SeriesBooksView: View {
     let series: String
+    let open: (String) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
@@ -124,7 +134,9 @@ struct SeriesBooksView: View {
 
     var body: some View {
         List(entries) { entry in
-            NavigationLink(value: entry.book.ratingKey) {
+            Button {
+                open(entry.book.ratingKey)
+            } label: {
                 HStack(spacing: 12) {
                     CoverImage(thumb: entry.book.thumb)
                         .frame(width: 52, height: 52)
@@ -152,13 +164,13 @@ struct SeriesBooksView: View {
                     }
                 }
             }
+            .buttonStyle(.plain)
             .listRowBackground(theme.surface)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.background)
         .navigationTitle(series)
-        .navigationDestination(for: String.self) { BookDetailView(ratingKey: $0) }
         .task { reload() }
         .onChange(of: app.libraryRevision) { _, _ in reload() }
     }
@@ -170,13 +182,4 @@ struct SeriesBooksView: View {
         }
         entries = (try? library.books(inSeries: series, downloadedOnly: app.isOffline)) ?? []
     }
-}
-
-/// A route that is a series, not a book.
-///
-/// The same reason `GenreRoute` exists: this stack pushes both kinds, and a
-/// series called "1234" would otherwise be the same destination as the book with
-/// that rating key.
-struct SeriesRoute: Hashable {
-    let name: String
 }

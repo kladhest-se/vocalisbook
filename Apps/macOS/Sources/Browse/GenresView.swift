@@ -9,46 +9,57 @@ import PlatformShared
 ///
 /// Unlike an author, a book has several genres. That is what a genre is, and why
 /// the store keeps them in a table of their own rather than a column.
+///
+/// No `NavigationStack`, for the reason `AuthorsView` explains at length: local
+/// state instead of a push means no automatic back chevron in the title bar,
+/// and leaving this screen through the sidebar always comes back to the grid
+/// rather than wherever it was left.
 struct GenresView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var genres: [GenreSummary] = []
+    @State private var selectedGenre: String?
+    let open: (String) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
 
     var body: some View {
-        // A `NavigationStack` of its own, for the reason `AuthorsView` explains:
-        // this is shown in a column, and a column is not a stack — without one,
-        // every card is a button that takes focus and does nothing.
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 24) {
-                    ForEach(genres) { genre in
-                        NavigationLink(value: GenreRoute(name: genre.name)) {
-                            GenreTile(genre: genre)
-                        }
-                        .buttonStyle(.plain)
-                    }
+        Group {
+            if let selectedGenre {
+                VStack(spacing: 0) {
+                    BackButton(title: "Genres") { self.selectedGenre = nil }
+                    GenreBooksView(genre: selectedGenre, open: open)
                 }
-                .padding(20)
-                .padding(.bottom, 20)
-            }
-            .background(theme.background.ignoresSafeArea())
-            .navigationTitle("Genres")
-            .navigationDestination(for: GenreRoute.self) { GenreBooksView(genre: $0.name) }
-            .navigationDestination(for: BookRoute.self) { BookDetailView(ratingKey: $0.ratingKey) }
-            .overlay {
-                if genres.isEmpty {
-                    // Not "yet": a library Plex has not matched carries no tags
-                    // at all, and refreshing will not produce any. It is a
-                    // metadata problem with a metadata fix.
-                    ContentUnavailableView(
-                        "No genres",
-                        systemImage: "theatermasks",
-                        description: Text(
-                            "Plex tags books with genres once an agent has matched them."
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 24) {
+                        ForEach(genres) { genre in
+                            Button {
+                                selectedGenre = genre.name
+                            } label: {
+                                GenreTile(genre: genre)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(20)
+                    .padding(.bottom, 20)
+                }
+                .background(theme.background.ignoresSafeArea())
+                .navigationTitle("Genres")
+                .overlay {
+                    if genres.isEmpty {
+                        // Not "yet": a library Plex has not matched carries no tags
+                        // at all, and refreshing will not produce any. It is a
+                        // metadata problem with a metadata fix.
+                        ContentUnavailableView(
+                            "No genres",
+                            systemImage: "theatermasks",
+                            description: Text(
+                                "Plex tags books with genres once an agent has matched them."
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -101,6 +112,7 @@ struct GenreTile: View {
 /// The books in one genre.
 struct GenreBooksView: View {
     let genre: String
+    let open: (String) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
@@ -112,7 +124,9 @@ struct GenreBooksView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(books, id: \.ratingKey) { book in
-                    NavigationLink(value: BookRoute(ratingKey: book.ratingKey)) {
+                    Button {
+                        open(book.ratingKey)
+                    } label: {
                         BookTile(book: book)
                     }
                     .buttonStyle(.plain)
@@ -143,13 +157,4 @@ struct GenreBooksView: View {
             downloadedOnly: app.isOffline
         )) ?? []
     }
-}
-
-/// A route that is a genre.
-///
-/// `String` is already the author route in this app, and `BookRoute` exists for
-/// the same reason: one type per destination, or whichever
-/// `navigationDestination` was declared last wins.
-struct GenreRoute: Hashable {
-    let name: String
 }

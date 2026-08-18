@@ -11,8 +11,12 @@ import Foundation
 /// same project and the same link.
 public enum AppIdentity: Sendable {
     public static let name = "VocalisBook"
-    public static let author = "Tommy Frössman"
+    public static let author = "kladhest-se"
     public static let repository = URL(string: "https://github.com/kladhest-se/vocalisbook")!
+
+    /// Where a question that is not a bug report goes. Issues on the
+    /// repository are for the second kind; this is for the first.
+    public static let contactEmail = "kladhest@tutamail.com"
 
     /// What the app is, in one sentence, for a window that has room for one.
     public static let summary = "A third-party audiobook player for Plex Media Server."

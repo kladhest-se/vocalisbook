@@ -25,7 +25,10 @@ struct CompactPlayerView: View {
             if app.player.bookRatingKey == nil {
                 nothingPlaying
             } else {
-                // The artwork gives way, and the controls do not.
+                // The artwork gives way, and the controls do not — down to a
+                // point. Below that point the controls are what gives way
+                // instead, because a transport too small to press is worse
+                // than no transport at all.
                 //
                 // A square cover across the full width is as tall as the window
                 // is wide, so shrinking the window shortened the space *and*
@@ -36,23 +39,41 @@ struct CompactPlayerView: View {
                 // Measured against the height rather than given a fixed size:
                 // the cover is as large as the space allows and no larger, so
                 // the window can go as small as somebody drags it and the
-                // controls stay.
+                // controls stay legible for as long as there is room for them.
                 GeometryReader { geometry in
+                let isMinimal = geometry.size.height <= 260
                 ScrollView {
                     VStack(spacing: 16) {
+                        // The bare minimum: art and a way to see, and change,
+                        // where you are — nothing that needs to be read or
+                        // aimed at with a pointer this small. Tapping the
+                        // cover still toggles play and pause, so playback
+                        // stays reachable without expanding the window; the
+                        // ordinary size does not carry the same gesture,
+                        // since a transport already does that job there and a
+                        // cover that silently doubles as a button when one is
+                        // not expected is a worse surprise than a missing one.
                         cover
-                            .frame(maxHeight: max(64, geometry.size.height * 0.40))
+                            .frame(maxHeight: max(64, geometry.size.height * (isMinimal ? 0.62 : 0.40)))
+                            .contentShape(.rect)
+                            .onTapGesture {
+                                if isMinimal { app.togglePlayPauseRespectingOffline() }
+                            }
                         scrubber
-                        titles
-                        transport
-                        secondary
 
-                        // Chapters need room, and give it up first.
+                        if !isMinimal {
+                            titles
+                            transport
+                            secondary
+                        }
+
+                        // Chapters need the most room, and give it up first.
                         //
-                        // Below this the window is a transport with a picture on
-                        // it, which is what somebody dragging it this small is
-                        // asking for — a list they cannot read two rows of is
-                        // not worth the height it takes from the controls.
+                        // Below this the window is a transport with a picture
+                        // on it, which is what somebody dragging it this
+                        // small is asking for — a list they cannot read two
+                        // rows of is not worth the height it takes from the
+                        // controls.
                         if geometry.size.height > 520 {
                             chapters
                         }

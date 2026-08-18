@@ -82,7 +82,7 @@
     <string>public.app-category.music</string>
 
     <key>NSHumanReadableCopyright</key>
-    <string>© Tommy Frössman</string>
+    <string>© kladhest-se</string>
 
     <!-- A homelab Plex server on the LAN is reached over plain HTTP more often
          than not. This permits it for local addresses only; public hosts still

@@ -12,52 +12,69 @@ import PlatformShared
 /// already being fetched for the row and doing no work once they were there.
 /// The television solved this exact problem the same way, for the same
 /// reason: `CoverCollage` moved from that file to this one unchanged.
+///
+/// No `NavigationStack`, and deliberately not any more. It used to have one of
+/// its own, needed because this view sits in the detail column of a
+/// `NavigationSplitView`, and a column is not a stack — `NavigationLink`
+/// resolves against a stack in scope or does nothing at all. Local state does
+/// the same job without the push, which is what stopped the system drawing an
+/// automatic back chevron in the title bar every time an author's books came
+/// on screen: there is no push for it to be a chevron *for*. It also means
+/// leaving Authors and coming back through the sidebar always shows the grid
+/// again, never wherever it was left — the view is torn down and rebuilt, and
+/// `selectedAuthor` goes with it.
+///
+/// `open` reaches a book the same way `HomeView` already does: by asking the
+/// sidebar to swap its own `selection` to `.book`, rather than pushing a
+/// second stack on top of this one.
 struct AuthorsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var authors: [AuthorSummary] = []
+    @State private var selectedAuthor: String?
+    let open: (String) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
 
     var body: some View {
-        // A `NavigationStack` of its own.
-        //
-        // This view is pushed into the sidebar column of a `NavigationSplitView`,
-        // and a column is not a stack. `NavigationLink(value:)` needs one in
-        // scope to resolve against, and `navigationDestination` outside a stack
-        // is a no-op — so every row was a button that looked live, took focus
-        // and did nothing. The list of authors was the whole feature, with the
-        // half that matters silently inert.
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 24) {
-                    ForEach(authors) { author in
-                        NavigationLink(value: author.name) {
-                            AuthorTile(author: author)
-                        }
-                        .buttonStyle(.plain)
-                    }
+        Group {
+            if let selectedAuthor {
+                VStack(spacing: 0) {
+                    BackButton(title: "Authors") { self.selectedAuthor = nil }
+                    AuthorBooksView(author: selectedAuthor, open: open)
                 }
-                .padding(20)
-                .padding(.bottom, 20)
-            }
-            .background(theme.background.ignoresSafeArea())
-            // No `.searchable` here.
-            //
-            // The split view already has one, and each `.searchable` wants a
-            // search item in the same NSToolbar — inserting the second throws,
-            // from inside a layout pass, which is fatal. That is the crash on
-            // opening Authors. Filtering happens in the field that is already
-            // there.
-            .navigationTitle("Authors")
-            .navigationDestination(for: String.self) { AuthorBooksView(author: $0) }
-            .overlay {
-                if authors.isEmpty {
-                    ContentUnavailableView(
-                        "No authors yet",
-                        systemImage: "person",
-                        description: Text("They appear once your library has been fetched.")
-                    )
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 24) {
+                        ForEach(authors) { author in
+                            Button {
+                                selectedAuthor = author.name
+                            } label: {
+                                AuthorTile(author: author)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(20)
+                    .padding(.bottom, 20)
+                }
+                .background(theme.background.ignoresSafeArea())
+                // No `.searchable` here.
+                //
+                // The split view already has one, and each `.searchable` wants
+                // a search item in the same NSToolbar — inserting the second
+                // throws, from inside a layout pass, which is fatal. That was
+                // the crash on opening Authors. Filtering happens in the field
+                // that is already there.
+                .navigationTitle("Authors")
+                .overlay {
+                    if authors.isEmpty {
+                        ContentUnavailableView(
+                            "No authors yet",
+                            systemImage: "person",
+                            description: Text("They appear once your library has been fetched.")
+                        )
+                    }
                 }
             }
         }
@@ -110,6 +127,7 @@ struct AuthorTile: View {
 
 struct AuthorBooksView: View {
     let author: String
+    let open: (String) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var books: [BookRecord] = []
@@ -120,7 +138,9 @@ struct AuthorBooksView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(books, id: \.ratingKey) { book in
-                    NavigationLink(value: BookRoute(ratingKey: book.ratingKey)) {
+                    Button {
+                        open(book.ratingKey)
+                    } label: {
                         BookTile(book: book)
                     }
                     .buttonStyle(.plain)
@@ -131,7 +151,6 @@ struct AuthorBooksView: View {
         }
         .background(theme.background.ignoresSafeArea())
         .navigationTitle(author)
-        .navigationDestination(for: BookRoute.self) { BookDetailView(ratingKey: $0.ratingKey) }
         .task {
             // Emptied rather than left, when there is nothing to read.
             //
@@ -146,13 +165,4 @@ struct AuthorBooksView: View {
             books = (try? library.books(byAuthor: author, sectionID: sectionID, downloadedOnly: app.isOffline)) ?? []
         }
     }
-}
-
-/// A distinct route type for books.
-///
-/// `String` is already the author route in this stack, so a bare rating key
-/// would push the wrong screen — two destinations for the same type, and
-/// whichever was declared last wins.
-struct BookRoute: Hashable {
-    let ratingKey: String
 }

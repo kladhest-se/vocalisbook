@@ -1489,6 +1489,20 @@ struct AboutCommand: Commands {
         text.append(link)
 
         text.append(NSAttributedString(
+            string: "\n",
+            attributes: [.font: NSFont.systemFont(ofSize: 11)]
+        ))
+
+        let mailto = URL(string: "mailto:\(AppIdentity.contactEmail)")!
+        text.append(NSAttributedString(
+            string: AppIdentity.contactEmail,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .link: mailto,
+            ]
+        ))
+
+        text.append(NSAttributedString(
             string: "\n\n\(AppIdentity.disclaimer)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 10),

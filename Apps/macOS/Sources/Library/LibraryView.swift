@@ -135,11 +135,11 @@ struct LibraryView: View {
                 case .allBooks:
                     grid
                 case .authors:
-                    AuthorsView()
+                    AuthorsView(open: { selection = .book($0) })
                 case .series:
-                    SeriesView()
+                    SeriesView(open: { selection = .book($0) })
                 case .genres:
-                    GenresView()
+                    GenresView(open: { selection = .book($0) })
                 case .downloads:
                     DownloadsView()
                 case .history:
@@ -149,19 +149,7 @@ struct LibraryView: View {
                     // pushing over it, so without this the library is
                     // unreachable once a book is open — which is exactly how it
                     // shipped.
-                    HStack(spacing: 8) {
-                        Button {
-                            selection = .allBooks
-                        } label: {
-                            Label("Library", systemImage: "chevron.left")
-                        }
-                        .buttonStyle(.borderless)
-                        .keyboardShortcut("[", modifiers: .command)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-
+                    BackButton(title: "Library") { selection = .allBooks }
                     BookDetailView(ratingKey: ratingKey)
                 }
             }
@@ -594,6 +582,33 @@ struct CoverImage: View {
             guard thumb == self.thumb else { return }
             image = decoded
         }
+    }
+}
+
+/// A way back, drawn in the content rather than the title bar.
+///
+/// `NavigationStack` draws its own back chevron automatically, in the title
+/// bar row beside the traffic lights — which is where it was, on every screen
+/// that reached a deeper view by pushing one. None of them do that any more:
+/// Authors, Series and Genres each swap local state instead, the same way the
+/// top-level sidebar already swaps `selection` to show a book. No push means
+/// no automatic chevron for the system to draw, and this is the only way back
+/// there is — one definition, so the four screens that need it stay in step.
+struct BackButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: action) {
+                Label(title, systemImage: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("[", modifiers: .command)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
     }
 }
 

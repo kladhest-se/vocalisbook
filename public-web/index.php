@@ -60,6 +60,7 @@ const STORES = [
 
 const GITHUB = 'https://github.com/kladhest-se/vocalisbook';
 const SPOKENMETA = 'https://github.com/kladhest-se/SpokenMeta';
+const CONTACT_EMAIL = 'kladhest@tutamail.com';
 
 /**
  * The screenshots for one platform, in filename order.
@@ -170,7 +171,8 @@ $tv = screenshots('tvos');
         <h2>Questions</h2>
         <p>
             Ask on <a href="<?= e(GITHUB) ?>">the GitHub repository</a>, which is also
-            where the source for all of the above can be read.
+            where the source for all of the above can be read, or write to
+            <a href="mailto:<?= e(CONTACT_EMAIL) ?>"><?= e(CONTACT_EMAIL) ?></a>.
         </p>
     </div>
 </section>
@@ -347,13 +349,14 @@ $tv = screenshots('tvos');
         <div class="body">
             <h2>Who made this</h2>
             <p class="lede" style="margin-bottom:16px">
-                VocalisBook is written by <strong>Tommy Frössman</strong>, because the
-                audiobooks on his own Plex server deserved a player that knew what a
+                VocalisBook is written by <strong>kladhest-se</strong>, because the
+                audiobooks on a home Plex server deserved a player that knew what a
                 chapter was. It is developed in the open.
             </p>
             <p>
                 <a href="<?= e(GITHUB) ?>">Source on GitHub</a> ·
-                <a href="<?= e(SPOKENMETA) ?>">SpokenMeta</a>
+                <a href="<?= e(SPOKENMETA) ?>">SpokenMeta</a> ·
+                <a href="mailto:<?= e(CONTACT_EMAIL) ?>"><?= e(CONTACT_EMAIL) ?></a>
             </p>
         </div>
     </div>
@@ -365,7 +368,7 @@ $tv = screenshots('tvos');
     <div class="wrap">
         <p>
             VocalisBook is not affiliated with Plex Inc. Plex is a trademark of its owner.<br>
-            © <?= date('Y') ?> Tommy Frössman ·
+            © <?= date('Y') ?> kladhest-se ·
             <a href="<?= e(GITHUB) ?>">github.com/kladhest-se/vocalisbook</a> ·
             <?php if ($isPrivacy): ?>
             <a href="./">Home</a>
