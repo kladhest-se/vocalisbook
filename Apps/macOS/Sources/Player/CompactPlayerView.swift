@@ -193,12 +193,25 @@ struct CompactPlayerView: View {
                     }
                 }
                 #if DEBUG
+                // Constrained to the window's own width before anything
+                // else, and centered within it — moved here after the
+                // previous placement turned out to be able to extend past
+                // the actual window edge at narrow widths, with nothing
+                // wrapping or clipping it back in. A monospaced string this
+                // long has no reason to fit inside 140pt just because it
+                // fit inside 400; the frame here is what makes that true
+                // regardless of how narrow the window gets, and is very
+                // possibly the mundane explanation for why this looked like
+                // it had vanished entirely at one reported size rather than
+                // merely rendered somewhere off-window.
                 Text("\(Int(geometry.size.width))×\(Int(height)) → \(tier)")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
                     .padding(4)
                     .background(.black.opacity(0.65), in: .rect(cornerRadius: 4))
-                    .padding(4)
+                    .frame(maxWidth: geometry.size.width - 16)
+                    .frame(width: geometry.size.width, height: height, alignment: .center)
                     .allowsHitTesting(false)
                 #endif
             }
