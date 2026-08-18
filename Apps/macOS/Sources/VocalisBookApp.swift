@@ -664,6 +664,23 @@ final class AppModel {
 
     // MARK: - Connecting
 
+    /// What "Reconnect" on the failure screen does — the exact same path a
+    /// launch takes, not a lighter-weight retry of whatever step failed.
+    /// `connect` re-discovers servers from scratch, which is deliberate: the
+    /// failure that put somebody here is usually the server's address having
+    /// changed, or a permission having been granted since, and re-running the
+    /// discovery is what actually answers either case. Signed out is a
+    /// different phase with its own screen, not something this button can
+    /// reach — if the token itself is gone, retrying a connection with no
+    /// token would only reproduce the same failure.
+    func retryConnection() async {
+        guard let token = keychain.read(.plexToken) else {
+            phase = .signedOut
+            return
+        }
+        await connect(token: token)
+    }
+
     func connect(token: String) async {
         phase = .launching
         do {

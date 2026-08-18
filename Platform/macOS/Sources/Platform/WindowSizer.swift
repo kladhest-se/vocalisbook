@@ -27,7 +27,7 @@ public enum WindowSizer {
 
     nonisolated public static let regularSize = NSSize(width: 1100, height: 700)
 
-    /// The floor `applyChrome` sets directly on the window, in each mode.
+    /// The floor `applyChrome` sets directly on the window.
     ///
     /// `RootView`'s `.windowResizability(.contentSize)` is meant to derive
     /// this from content on its own, and normally would — but whether it
@@ -36,13 +36,19 @@ public enum WindowSizer {
     /// something this app controls or can fully rely on. Setting `NSWindow`'s
     /// own `minSize` here as well costs nothing when the SwiftUI side is
     /// already right, and is the one thing guaranteed to work if it is not.
-    /// The compact floor sits under the ultra-minimal player's own 260pt
-    /// height threshold, so there is room to drag into that state rather than
-    /// the window stopping right at its edge; the library floor sits above
-    /// `compactWidth`, so it is never asked to hold a sidebar and a grid at a
-    /// size neither has room for.
-    nonisolated private static let compactMinSize = NSSize(width: 140, height: 160)
-    nonisolated private static let libraryMinSize = NSSize(width: 650, height: 450)
+    ///
+    /// One value for both modes, deliberately, after a first attempt used
+    /// two: 140×160 while compact, 650×450 while not. 650 is bigger than
+    /// `compactWidth`, and that is a deadlock, not a looser constraint —
+    /// while non-compact chrome's floor is in effect, AppKit refuses to let
+    /// the window narrow past 650 at all, so it can never reach 620 to
+    /// trigger the switch to compact chrome in the first place. Whatever
+    /// bound is set here has to sit under `compactWidth` unconditionally, in
+    /// every mode, or the window can get stuck unable to ever cross it. The
+    /// content itself already handles "do not show the library at a
+    /// too-narrow width" by switching to `CompactPlayerView` well before this
+    /// floor is reached, which is what makes one small value safe for both.
+    nonisolated private static let windowMinSize = NSSize(width: 140, height: 160)
 
     private static var mainWindow: NSWindow? {
         // The settings window and the menu bar popover are also windows; the one
@@ -93,7 +99,7 @@ public enum WindowSizer {
         } else {
             window.styleMask.remove(.fullSizeContentView)
         }
-        window.minSize = compact ? compactMinSize : libraryMinSize
+        window.minSize = windowMinSize
 
         // The traffic lights go too, in the small layout.
         //

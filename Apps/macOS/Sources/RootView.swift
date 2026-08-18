@@ -57,13 +57,47 @@ struct RootView: View {
 struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
+    @State private var isReconnecting = false
+
+    /// The first sentence only, not the paragraph of troubleshooting detail
+    /// that sometimes follows it.
+    ///
+    /// `plexExplanation` joins a short description to a longer `failureReason`
+    /// with a blank line between them — genuinely useful detail in the places
+    /// that already show it, like the server picker, where somebody is
+    /// actively troubleshooting a specific connection. A full-screen failure
+    /// is not that moment: it wants one plain sentence and something to press,
+    /// not a paragraph about local network permissions read while wondering
+    /// whether the app has actually gotten stuck.
+    private var summary: String {
+        message.components(separatedBy: "\n\n").first ?? message
+    }
 
     var body: some View {
         ContentUnavailableView {
             Label("Something went wrong", systemImage: "exclamationmark.triangle")
         } description: {
-            Text(message)
+            Text(summary)
         } actions: {
+            // Retries the whole connection from scratch rather than
+            // whatever step failed — see `retryConnection`'s own comment for
+            // why that is the more useful behaviour, not a lesser one.
+            Button {
+                isReconnecting = true
+                Task {
+                    await app.retryConnection()
+                    isReconnecting = false
+                }
+            } label: {
+                if isReconnecting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Reconnect")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isReconnecting)
+
             Button("Sign out") { app.signOut() }
         }
     }
