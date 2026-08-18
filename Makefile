@@ -308,6 +308,31 @@ print('\n'.join('  %-26s %-26s %s' % r for r in rows) if rows else '  none attac
 # No `ios-project` prerequisite: make builds prerequisites before running any
 # recipe, so with one the project would be regenerated and only then would you be
 # told which variable is missing. Ask first, work second.
+# `-destination 'generic/platform=iOS'`, not a specific device id.
+#
+# `xcrun devicectl` and `xcodebuild`'s own destination resolution disagree
+# about which attached devices exist — `devices` above uses `devicectl` and
+# saw an iPad and an Apple TV correctly, while `xcodebuild -destination
+# platform=iOS,id=...` reported "unable to find a destination matching" for
+# the identical id, listing simulators and one other physical device but
+# not this one. That is xcodebuild's own device-pairing state, entirely
+# outside this project — usually resolved by opening Xcode's own Window >
+# Devices and Simulators and letting it finish "preparing" a newly
+# reconnected device, but not something a Makefile can fix from outside.
+#
+# Building generic and installing separately via `devicectl` sidesteps the
+# disagreement rather than resolving it: the build no longer needs
+# xcodebuild to know about the specific device at all, and `devicectl
+# device install`, already proven working by `make devices` succeeding,
+# does the device-specific half on its own.
+#
+# The cost: `-allowProvisioningDeviceRegistration` can only auto-register a
+# device xcodebuild is building *for*, and a generic destination is not
+# building for any device in particular. A device this account has
+# installed to before is already registered and unaffected; a genuinely new
+# device would need registering some other way first — opening one of the
+# generated Xcode projects directly and letting it prompt, or the Apple
+# Developer site — before this target would find it provisioned.
 ios-device:
 	@$(REQUIRE_TEAM)
 	@test -n "$(IOS_DEVICE)" || { echo "Set IOS_DEVICE. make devices"; exit 1; }
@@ -316,7 +341,7 @@ ios-device:
 	@$(call REQUIRE_PLATFORM,$(IOS_DEVICE),iOS)
 	@set -e; $(call bump_build,iOS); \
 	xcodebuild build -project $(IOS_PROJECT) -scheme VocalisBook \
-		-destination 'platform=iOS,id=$(IOS_DEVICE)' \
+		-destination 'generic/platform=iOS' \
 		-allowProvisioningUpdates -allowProvisioningDeviceRegistration \
 		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
 		CURRENT_PROJECT_VERSION=$$build; \
@@ -332,6 +357,11 @@ ios-device:
 # No `tvos-project` prerequisite: make builds prerequisites before running any
 # recipe, so with one the project would be regenerated and only then would you be
 # told which variable is missing. Ask first, work second.
+#
+# `-destination 'generic/platform=tvOS'`, for the identical reason
+# `ios-device` above builds generic rather than for a specific id — see its
+# own comment for the full explanation and the device-registration tradeoff
+# that comes with it.
 tvos-device:
 	@$(REQUIRE_TEAM)
 	@test -n "$(TVOS_DEVICE)" || { echo "Set TVOS_DEVICE. make devices"; exit 1; }
@@ -340,7 +370,7 @@ tvos-device:
 	@$(call REQUIRE_PLATFORM,$(TVOS_DEVICE),tvOS)
 	@set -e; $(call bump_build,tvOS); \
 	xcodebuild build -project $(TVOS_PROJECT) -scheme VocalisBook \
-		-destination 'platform=tvOS,id=$(TVOS_DEVICE)' \
+		-destination 'generic/platform=tvOS' \
 		-allowProvisioningUpdates -allowProvisioningDeviceRegistration \
 		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
 		CURRENT_PROJECT_VERSION=$$build; \

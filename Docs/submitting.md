@@ -85,7 +85,12 @@ character limit this does not.
 
 **1. Screen recording.** See above.
 
-**2. Devices and OS versions tested on.** _Tommy to fill in._
+**2. Devices and OS versions tested on.**
+
+- iPhone 16 Pro (model MYNH3QN/A) — iOS 26.6
+- iPad Pro 13-inch (M4) (model MWRY3KN/A) — iPadOS 26.2.1
+- Apple TV 4K (3rd generation), 128GB (model A2843) — tvOS 26.6
+- MacBook Pro (16-inch, Nov 2023) (model MUW63KS/A) — macOS 26.6.1
 
 **3. What the app does, and for whom.** VocalisBook is a native audiobook
 player for a Plex Media Server the user already owns and runs. Plex's own

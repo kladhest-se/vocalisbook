@@ -6,6 +6,7 @@ import PlatformShared
 struct SettingsView: View {
     @State private var confirmingClear = false
     @State private var confirmingReset = false
+    @State private var showingThemePicker = false
 
     /// Built outside the view.
     ///
@@ -39,14 +40,27 @@ struct SettingsView: View {
 
         Form {
             Section("Appearance") {
-                // One control. "Match system" and the after-dark switch are
-                // entries in the same list rather than a separate mode, so
-                // there is one decision to make and nothing that can be set to
-                // something with no effect.
-                Picker("Theme", selection: $themes.selection) {
-                    ForEach(ThemeSelection.all, id: \.self) { option in
-                        Text(option.title).tag(option)
+                // A swatch grid in a popover, matching iOS and tvOS, rather
+                // than the plain dropdown this used to be. The names meant
+                // nothing until seen — "Ink" and "Ember" said nothing about
+                // which was dark and which was warm — and a colour scheme is
+                // the one setting where the preview actually is the
+                // description, on every platform this app has, not just two
+                // of the three.
+                Button {
+                    showingThemePicker = true
+                } label: {
+                    HStack {
+                        Text("Theme")
+                        Spacer()
+                        Text(themes.selection.title)
+                            .foregroundStyle(theme.secondaryText)
                     }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showingThemePicker, arrowEdge: .trailing) {
+                    ThemePicker(selection: $themes.selection)
                 }
 
                 Text(themes.selection.subtitle)
@@ -243,5 +257,104 @@ struct SettingsView: View {
         // frame in here left the window free to grow to its content and the
         // content marooned in the middle of it.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Themes as swatches in a popover, matching the grid iOS and tvOS both
+/// already use for the same screen.
+///
+/// A popover rather than a pushed screen: this Mac app's Settings is a
+/// single `Form` window, not a navigation stack with somewhere to push to,
+/// and a popover is the native way to offer more than a `Form` row holds
+/// without leaving Settings.
+struct ThemePicker: View {
+    @Binding var selection: ThemeSelection
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(ThemeSelection.all, id: \.self) { candidate in
+                    Button {
+                        selection = candidate
+                        dismiss()
+                    } label: {
+                        ThemeSwatch(option: candidate, isSelected: candidate == selection)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(14)
+        }
+        .frame(width: 420, height: 360)
+        .background(theme.background)
+    }
+}
+
+/// One theme, previewed at roughly the proportions it appears on screen:
+/// page, surface, text, accent — not a name that means nothing until it has
+/// been tried.
+///
+/// A macOS-sized copy of iOS's own `ThemeSwatch` rather than a shared type —
+/// the two apps' `SettingsView.swift` are separate targets, and this one
+/// sits in a fixed-size popover rather than filling a phone screen, which
+/// wants smaller tiles than iOS's own 150–220pt range in exchange for
+/// showing more of the grid without scrolling.
+struct ThemeSwatch: View {
+    let option: ThemeSelection
+    let isSelected: Bool
+
+    /// The automatic entries preview what they will most often look like
+    /// rather than showing an empty tile.
+    private var theme: Theme { option.previewTheme }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(theme.text)
+                    .frame(width: 50, height: 5)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(theme.secondaryText)
+                    .frame(width: 34, height: 4)
+                Spacer(minLength: 0)
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(height: 12)
+            }
+            .padding(8)
+            .frame(height: 62)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.surface)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(option.title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(theme.accent)
+                    }
+                }
+                Text(option.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(theme.secondaryText)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.background)
+        }
+        .clipShape(.rect(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? theme.accent : .clear, lineWidth: 2)
+        )
     }
 }
