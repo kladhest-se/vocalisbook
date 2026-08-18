@@ -4,8 +4,8 @@ import PlatformShared
 
 /// Series, from the metadata agent's own tags.
 ///
-/// Shaped like `GenresView`: a list of names with a cover and a count, and the
-/// books behind each. The difference is that these have an *order* — the agent
+/// Shaped like `GenresView`: a grid of cards, and the books behind each in
+/// reading order. The difference is that these have an *order* — the agent
 /// records a position per book, and a series read out of order is the one
 /// grouping where that matters.
 ///
@@ -13,38 +13,34 @@ import PlatformShared
 /// in whatever order; a `Series:` Mood is something the metadata states. The
 /// agent's contract is explicit that collections are user data and a series
 /// should not be derived from them alone.
+///
+/// A card grid rather than a table, matching `AuthorsView` and `GenresView`:
+/// a name and a count told you nothing until you clicked it, and the cover art
+/// was already being fetched either way.
 struct SeriesView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var series: [SeriesSummary] = []
 
+    private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
+
     var body: some View {
         // A `NavigationStack` of its own, for the reason `GenresView` explains:
         // this is shown in a column, and a column is not a stack.
         NavigationStack {
-            List(series) { entry in
-                NavigationLink(value: SeriesRoute(name: entry.name)) {
-                    HStack(spacing: 12) {
-                        CoverImage(thumb: entry.covers.first)
-                            .frame(width: 44, height: 44)
-                            .clipShape(.rect(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.name)
-                            Text(entry.bookCount == 1 ? "1 book" : "\(entry.bookCount) books")
-                                .font(.caption)
-                                .foregroundStyle(theme.secondaryText)
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 24) {
+                    ForEach(series) { entry in
+                        NavigationLink(value: SeriesRoute(name: entry.name)) {
+                            SeriesTile(series: entry)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(entry.name)
-                .accessibilityValue(entry.bookCount == 1 ? "1 book" : "\(entry.bookCount) books")
-                .listRowBackground(theme.surface)
+                .padding(20)
+                .padding(.bottom, 20)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.background)
+            .background(theme.background.ignoresSafeArea())
             .navigationTitle("Series")
             .navigationDestination(for: SeriesRoute.self) { SeriesBooksView(series: $0.name) }
             .overlay {
@@ -87,7 +83,38 @@ struct SeriesView: View {
     }
 }
 
+/// A series as a card: its covers, its name, how many books are in it.
+struct SeriesTile: View {
+    let series: SeriesSummary
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CoverCollage(thumbs: series.covers, placeholderSymbol: "books.vertical")
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: 8))
+
+            Text(series.name)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(theme.text)
+                .lineLimit(2)
+
+            Text(series.bookCount == 1 ? "1 book" : "\(series.bookCount) books")
+                .font(.caption)
+                .foregroundStyle(theme.tertiaryText)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(series.name)
+        .accessibilityValue(series.bookCount == 1 ? "1 book" : "\(series.bookCount) books")
+    }
+}
+
 /// One series, in reading order.
+///
+/// Kept as a list rather than a grid, unlike the screen above it — reading
+/// order is the entire point of a series, and a position stated plainly in a
+/// column is a clearer answer to "what comes after this" than a number
+/// badged onto a card would be.
 struct SeriesBooksView: View {
     let series: String
 

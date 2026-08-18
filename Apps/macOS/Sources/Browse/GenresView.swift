@@ -4,8 +4,8 @@ import PlatformShared
 
 /// Genres, from the cache.
 ///
-/// Shaped like `AuthorsView` next door — a list of names with a cover and a
-/// count, and a grid behind each. Same screen, different noun.
+/// Shaped like `AuthorsView` next door — a grid of cards, and a grid of books
+/// behind each. Same screen, different noun.
 ///
 /// Unlike an author, a book has several genres. That is what a genre is, and why
 /// the store keeps them in a table of their own rather than a column.
@@ -14,33 +14,26 @@ struct GenresView: View {
     @Environment(\.theme) private var theme
     @State private var genres: [GenreSummary] = []
 
+    private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
+
     var body: some View {
         // A `NavigationStack` of its own, for the reason `AuthorsView` explains:
         // this is shown in a column, and a column is not a stack — without one,
-        // every row is a button that takes focus and does nothing.
+        // every card is a button that takes focus and does nothing.
         NavigationStack {
-            List(genres) { genre in
-                NavigationLink(value: GenreRoute(name: genre.name)) {
-                    HStack(spacing: 12) {
-                        CoverImage(thumb: genre.covers.first)
-                            .frame(width: 44, height: 44)
-                            .clipShape(.rect(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(genre.name)
-                                .foregroundStyle(theme.text)
-                                .lineLimit(1)
-                            Text(genre.bookCount == 1 ? "1 book" : "\(genre.bookCount) books")
-                                .font(.caption)
-                                .foregroundStyle(theme.secondaryText)
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 24) {
+                    ForEach(genres) { genre in
+                        NavigationLink(value: GenreRoute(name: genre.name)) {
+                            GenreTile(genre: genre)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .listRowBackground(theme.surface)
+                .padding(20)
+                .padding(.bottom, 20)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-            .background(theme.background)
+            .background(theme.background.ignoresSafeArea())
             .navigationTitle("Genres")
             .navigationDestination(for: GenreRoute.self) { GenreBooksView(genre: $0.name) }
             .navigationDestination(for: BookRoute.self) { BookDetailView(ratingKey: $0.ratingKey) }
@@ -79,11 +72,38 @@ struct GenresView: View {
     }
 }
 
+/// A genre as a card: books that carry it, their covers, how many there are.
+struct GenreTile: View {
+    let genre: GenreSummary
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CoverCollage(thumbs: genre.covers, placeholderSymbol: "theatermasks")
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: 8))
+
+            Text(genre.name)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(theme.text)
+                .lineLimit(2)
+
+            Text(genre.bookCount == 1 ? "1 book" : "\(genre.bookCount) books")
+                .font(.caption)
+                .foregroundStyle(theme.tertiaryText)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(genre.name)
+        .accessibilityValue(genre.bookCount == 1 ? "1 book" : "\(genre.bookCount) books")
+    }
+}
+
 /// The books in one genre.
 struct GenreBooksView: View {
     let genre: String
 
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
     @State private var books: [BookRecord] = []
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 20)]
@@ -100,6 +120,7 @@ struct GenreBooksView: View {
             }
             .padding()
         }
+        .background(theme.background.ignoresSafeArea())
         .navigationTitle(genre)
         .task { reload() }
         .onChange(of: app.libraryRevision) { _, _ in reload() }

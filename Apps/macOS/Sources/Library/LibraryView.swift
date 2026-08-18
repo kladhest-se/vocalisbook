@@ -46,59 +46,76 @@ struct LibraryView: View {
             // book from Continue listening so that `selection` became non-nil
             // and could be cleared again.
             //
-            // Every row is a case of one enum now. The detail pane switches on
-            // it, the highlight comes from the list rather than from a colour
-            // this file chose, and going back to the grid is selecting a row
-            // like any other.
-            List(selection: $selection) {
-                // The same five as the phone and the television, in the same
-                // order. A sidebar row and a tab are the same idea in different
-                // furniture, and there is no reason to learn the app twice.
-                sidebarRow("Home", "house", tag: .home)
-                sidebarRow("Browse", "square.grid.2x2", tag: .allBooks)
+            // Every row is a case of one enum still, and the detail pane still
+            // switches on it — that part was right. What changed is what draws
+            // the rows.
+            //
+            // `List(selection:)` drew its own separators between every row and
+            // its own selection colour on top of the one this file chose — a
+            // hairline nobody asked for under Home, under Browse, under every
+            // row, and a selected row that flashed the platform's blue rather
+            // than this app's accent. `List` on macOS does not give up that
+            // chrome just because a row background is supplied; overriding it
+            // fully needs private API this app has no business reaching for.
+            //
+            // A plain `ScrollView` of buttons draws nothing this file did not
+            // ask it to. It is the same trade the iPad's tab bar already made,
+            // for the same reason: full control over what a selected row looks
+            // like, in exchange for the native list's built-in arrow-key
+            // stepping between rows — Tab still reaches every row, and Space or
+            // Return still activates one, which is what matters for using this
+            // sidebar without a pointer at all.
+            ScrollView {
+                VStack(spacing: 2) {
+                    // The same five as the phone and the television, in the
+                    // same order. A sidebar row and a tab are the same idea in
+                    // different furniture, and there is no reason to learn the
+                    // app twice.
+                    sidebarRow("Home", "house", tag: .home)
+                    sidebarRow("Browse", "square.grid.2x2", tag: .allBooks)
 
-                // Directly under "All books", with no section header: these are
-                // four ways into the same library, and a heading called
-                // "Library" said nothing while pushing three of them below a
-                // Continue listening section that grows.
-                sidebarRow("Authors", "person", tag: .authors)
-                sidebarRow("Series", "books.vertical", tag: .series)
-                sidebarRow("Genres", "theatermasks", tag: .genres)
+                    // Directly under "All books": these are four ways into the
+                    // same library, and a heading called "Library" said
+                    // nothing while pushing three of them below a Continue
+                    // listening section that grows.
+                    sidebarRow("Authors", "person", tag: .authors)
+                    sidebarRow("Series", "books.vertical", tag: .series)
+                    sidebarRow("Genres", "theatermasks", tag: .genres)
 
-                // One wordless divider rather than a second "Library" heading
-                // nobody asked to read: everything above is a way of looking at
-                // the same books, everything below is a tool. The shape says
-                // that without a label having to.
-                Divider()
-                    .padding(.vertical, 6)
+                    // One wordless divider rather than a second "Library"
+                    // heading nobody asked to read: everything above is a way
+                    // of looking at the same books, everything below is a
+                    // tool. The shape says that without a label having to.
+                    Divider()
+                        .padding(.vertical, 6)
 
-                // Only where downloads exist. The capability is true on this
-                // platform and checked anyway, so the row and the feature cannot
-                // come apart if that ever changes.
-                if PlatformCapabilities.supportsOfflineDownloads {
-                    sidebarRow("Downloads", "arrow.down.circle", tag: .downloads)
+                    // Only where downloads exist. The capability is true on
+                    // this platform and checked anyway, so the row and the
+                    // feature cannot come apart if that ever changes.
+                    if PlatformCapabilities.supportsOfflineDownloads {
+                        sidebarRow("Downloads", "arrow.down.circle", tag: .downloads)
+                    }
+                    sidebarRow("History", "flame", tag: .history)
+
+                    // No Continue listening section here.
+                    //
+                    // Home is that list, on every platform, and it shows a
+                    // cover, a position and how long is left. The sidebar had
+                    // the same books as one-line labels, growing downwards and
+                    // pushing the four ways into the library further from the
+                    // top of the window — a second copy of one screen's
+                    // content, in a worse form, in the way of everything else.
                 }
-                sidebarRow("History", "flame", tag: .history)
-
-                // No Continue listening section here.
-                //
-                // Home is that list, on every platform, and it shows a cover, a
-                // position and how long is left. The sidebar had the same books
-                // as one-line labels, growing downwards and pushing the six ways
-                // into the library further from the top of the window — a second
-                // copy of one screen's content, in a worse form, in the way of
-                // everything else.
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
             // Flush to the window, top to bottom, square.
             //
             // `.sidebar` insets its rows and rounds the selection into a pill
             // floating away from the edge — which reads as a panel laid over the
-            // window rather than part of it. `.plain` with the theme's own
-            // surface is the shape asked for: a column that starts at the window
-            // border and runs the full height.
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            // window rather than part of it. The theme's own surface, run edge
+            // to edge, is the shape asked for: a column that starts at the
+            // window border and runs the full height.
             .background(theme.surface)
             .ignoresSafeArea(edges: .vertical)
             .navigationSplitViewColumnWidth(min: 210, ideal: 250)
@@ -204,10 +221,10 @@ struct LibraryView: View {
 
     /// One row, coloured by whether it is the one on screen.
     ///
-    /// `List(selection:)` draws its own highlight by default — the system's
-    /// grey, the same in every theme, on a sidebar that otherwise commits to
-    /// eight of them. A tinted row background and a filled icon read as this
-    /// app's own selection rather than the platform's, matching the accent
+    /// A plain button rather than a tagged `Label` — see the comment above the
+    /// sidebar's `ScrollView` for why `List(selection:)` was replaced outright
+    /// rather than patched. Selection is `selection = tag` directly; the tint
+    /// and the filled icon are this function's whole job, matching the accent
     /// every other selected state in the app already uses — the iPad's tab
     /// bar, a focused row on the television, a chosen theme in Settings.
     ///
@@ -215,23 +232,28 @@ struct LibraryView: View {
     /// rather than checked — true for the seven in use, and worth confirming
     /// again before reaching for an eighth: a name that does not resolve
     /// renders as nothing rather than an error.
-    @ViewBuilder
     private func sidebarRow(_ title: String, _ symbol: String, tag: SidebarItem) -> some View {
         let isSelected = selection == tag
-        Label {
-            Text(title)
-                .foregroundStyle(isSelected ? theme.text : theme.secondaryText)
-        } icon: {
-            Image(systemName: isSelected ? "\(symbol).fill" : symbol)
-                .foregroundStyle(isSelected ? theme.accent : theme.secondaryText)
+        return Button {
+            selection = tag
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "\(symbol).fill" : symbol)
+                    .frame(width: 20)
+                    .foregroundStyle(isSelected ? theme.accent : theme.secondaryText)
+                Text(title)
+                    .foregroundStyle(isSelected ? theme.text : theme.secondaryText)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? theme.accent.opacity(0.15) : .clear)
+            )
+            .contentShape(.rect)
         }
-        .tag(tag)
-        .listRowBackground(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? theme.accent.opacity(0.15) : .clear)
-                .padding(.vertical, 1)
-        )
-        .padding(.vertical, 3)
+        .buttonStyle(.plain)
     }
 
     /// The controls, on their own row under the title bar.
@@ -575,6 +597,76 @@ struct CoverImage: View {
     }
 }
 
+/// Up to four covers in a square — an author, a series or a genre as a card,
+/// rather than a name in a row.
+///
+/// Ported from the television's version, which solved this exact problem for
+/// exactly this reason: a list of names told you nothing until you clicked one,
+/// and the art is already cached, so showing it costs nothing a query was not
+/// already doing. Nothing here is tvOS-specific — it is plain SwiftUI over this
+/// file's own `CoverImage` — which is what let it move platforms unchanged.
+///
+/// One cover fills the square, two split it, three or four make a grid.
+/// Anything else would need a placeholder tile, and a hole in a collage looks
+/// like a failed download rather than a design.
+struct CoverCollage: View {
+    let thumbs: [String]
+    var placeholderSymbol: String = "person"
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height)
+            let half = side / 2
+
+            switch thumbs.count {
+            case 0:
+                placeholder.frame(width: side, height: side)
+
+            case 1:
+                CoverImage(thumb: thumbs[0]).frame(width: side, height: side).clipped()
+
+            case 2:
+                HStack(spacing: 2) {
+                    CoverImage(thumb: thumbs[0]).frame(width: half - 1, height: side).clipped()
+                    CoverImage(thumb: thumbs[1]).frame(width: half - 1, height: side).clipped()
+                }
+
+            case 3:
+                HStack(spacing: 2) {
+                    CoverImage(thumb: thumbs[0]).frame(width: half - 1, height: side).clipped()
+                    VStack(spacing: 2) {
+                        CoverImage(thumb: thumbs[1]).frame(width: half - 1, height: half - 1).clipped()
+                        CoverImage(thumb: thumbs[2]).frame(width: half - 1, height: half - 1).clipped()
+                    }
+                }
+
+            default:
+                VStack(spacing: 2) {
+                    HStack(spacing: 2) {
+                        CoverImage(thumb: thumbs[0]).frame(width: half - 1, height: half - 1).clipped()
+                        CoverImage(thumb: thumbs[1]).frame(width: half - 1, height: half - 1).clipped()
+                    }
+                    HStack(spacing: 2) {
+                        CoverImage(thumb: thumbs[2]).frame(width: half - 1, height: half - 1).clipped()
+                        CoverImage(thumb: thumbs[3]).frame(width: half - 1, height: half - 1).clipped()
+                    }
+                }
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        Rectangle()
+            .fill(theme.surface)
+            .overlay(
+                Image(systemName: placeholderSymbol)
+                    .font(.system(size: 40))
+                    .foregroundStyle(theme.tertiaryText)
+            )
+    }
+}
+
 /// The offline switch, next to the account button. See the iOS one for why this
 /// is a choice rather than something detected.
 struct OfflineToggle: View {
@@ -610,10 +702,11 @@ struct OfflineToggle: View {
 
 /// What the sidebar can be showing.
 ///
-/// One type for every row, so the list owns the highlight and the detail pane
-/// switches on a single value. The previous arrangement mixed a hand-drawn
-/// highlight with `NavigationLink`s and could get into a state where the lit row
-/// and the visible screen disagreed, with no way to click back.
+/// One type for every row, so the sidebar's buttons and the detail pane agree
+/// on a single value rather than tracking two things that can drift apart. The
+/// arrangement before this mixed a hand-drawn highlight with `NavigationLink`s
+/// and could get into a state where the lit row and the visible screen
+/// disagreed, with no way to click back.
 enum SidebarItem: Hashable {
     case home
     case allBooks

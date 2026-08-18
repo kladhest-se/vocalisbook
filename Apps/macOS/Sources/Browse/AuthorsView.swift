@@ -6,10 +6,18 @@ import PlatformShared
 ///
 /// Plex models the author as the album artist, so it is already on every book
 /// row — this needs no network and works offline like the rest of browsing.
+///
+/// A grid of cards, not a table. It was a `List` of names with a cover and a
+/// count, which told you nothing until you clicked one — the covers were
+/// already being fetched for the row and doing no work once they were there.
+/// The television solved this exact problem the same way, for the same
+/// reason: `CoverCollage` moved from that file to this one unchanged.
 struct AuthorsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var authors: [AuthorSummary] = []
+
+    private let columns = [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
 
     var body: some View {
         // A `NavigationStack` of its own.
@@ -21,36 +29,18 @@ struct AuthorsView: View {
         // and did nothing. The list of authors was the whole feature, with the
         // half that matters silently inert.
         NavigationStack {
-            List(authors) { author in
-                NavigationLink(value: author.name) {
-                    HStack(spacing: 12) {
-                        // One cover, not the four the television shows. A 2×2
-                        // collage at this size is mush; the point here is only
-                        // to make the row scannable by something other than
-                        // reading it.
-                        CoverImage(thumb: author.covers.first)
-                            .frame(width: 44, height: 44)
-                            .clipShape(.rect(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(author.name)
-                                .foregroundStyle(theme.text)
-                                .lineLimit(1)
-                            // "12 books", not a bare "12" in the corner — which
-                            // could as easily have been a rating or a position.
-                            Text(author.bookCount == 1 ? "1 book" : "\(author.bookCount) books")
-                                .font(.footnote)
-                                .foregroundStyle(theme.tertiaryText)
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 24) {
+                    ForEach(authors) { author in
+                        NavigationLink(value: author.name) {
+                            AuthorTile(author: author)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(author.name)
-                    .accessibilityValue(author.bookCount == 1 ? "1 book" : "\(author.bookCount) books")
                 }
-                .listRowBackground(theme.surface)
+                .padding(20)
+                .padding(.bottom, 20)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
             .background(theme.background.ignoresSafeArea())
             // No `.searchable` here.
             //
@@ -90,12 +80,39 @@ struct AuthorsView: View {
     }
 }
 
+/// An author as a card: their covers, their name, how many books.
+struct AuthorTile: View {
+    let author: AuthorSummary
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CoverCollage(thumbs: author.covers, placeholderSymbol: "person")
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: 8))
+
+            Text(author.name)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(theme.text)
+                .lineLimit(2)
+
+            Text(author.bookCount == 1 ? "1 book" : "\(author.bookCount) books")
+                .font(.caption)
+                .foregroundStyle(theme.tertiaryText)
+        }
+        // One element. Read separately it is an unlabelled image, a name and a
+        // count — and the image is announced first, so the name arrives last.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(author.name)
+        .accessibilityValue(author.bookCount == 1 ? "1 book" : "\(author.bookCount) books")
+    }
+}
+
 struct AuthorBooksView: View {
     let author: String
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var books: [BookRecord] = []
-    @State private var selection: String?
 
     private let columns = [GridItem(.adaptive(minimum: 110, maximum: 160), spacing: 16)]
 
