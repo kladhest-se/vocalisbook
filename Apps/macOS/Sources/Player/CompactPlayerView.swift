@@ -233,6 +233,20 @@ struct CompactPlayerView: View {
         }
         }
         }
+        // Forces this VStack to report back exactly the size it was
+        // offered, rather than the summed natural height of `header` plus
+        // whatever its own content wants — which is the same unpinned-frame
+        // gap already found and fixed at two levels further out, one level
+        // deeper still. The debug label kept reporting a fixed height
+        // across three visibly different window sizes while its width
+        // varied correctly, which is exactly the signature: VStack sums
+        // height from its children rather than reading it from its parent,
+        // so a missing pin here shows up as height specifically freezing
+        // while width, governed differently, kept tracking. `maxWidth`
+        // alongside it for the same reason, even though width was not the
+        // one observed to be wrong — nothing here should be trusted to
+        // self-report correctly anymore without being told to.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.background.ignoresSafeArea())
         // A thin border, because the chrome is gone.
         //
