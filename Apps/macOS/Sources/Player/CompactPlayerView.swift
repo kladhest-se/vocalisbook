@@ -34,16 +34,22 @@ private enum Tier: Int, Comparable {
 
     static func < (lhs: Tier, rhs: Tier) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    /// Margins roughly doubled from the previous, measurement-backed
-    /// attempt — 225/361/517 were the computed minimums that attempt
-    /// found, and this round assumes those numbers, or the assumptions
-    /// behind them, are still missing something rather than trusting them
-    /// again at a tighter margin.
+    /// Tightened back toward the originally-computed minimums —
+    /// 225/361/517 for `withProgress`/`withControls`/`full` — now that the
+    /// actual cause of the sizing bugs this session chased is fixed and
+    /// confirmed working: a stale scene-level `.frame(minWidth:minHeight:)`
+    /// that was capping the window well above where any of this logic could
+    /// even run, not the measurement or the arithmetic. The margins here had
+    /// been doubled specifically because that root cause was still
+    /// unconfirmed and every number was under suspicion; with it found and
+    /// fixed, a wide margin was mostly making the window promote to a
+    /// smaller tier well before it needed to, spending real width and height
+    /// as blank space that could have shown more content.
     init(height: CGFloat) {
         switch height {
-        case ...260: self = .artOnly
-        case ...420: self = .withProgress
-        case ...600: self = .withControls
+        case ...240: self = .artOnly
+        case ...340: self = .withProgress
+        case ...520: self = .withControls
         default: self = .full
         }
     }
@@ -52,12 +58,13 @@ private enum Tier: Int, Comparable {
     /// reasonably tall needs this as well as the height check, or it can
     /// compute a tier from height alone and try to fit a six-button
     /// transport row into whatever width is actually left. 316pt was the
-    /// computed minimum for that row; 440 is the padded threshold here.
+    /// computed minimum for that row; tightened back to a more modest
+    /// margin above it for the same reason as the height thresholds above.
     init(width: CGFloat) {
         switch width {
-        case ...210: self = .artOnly
-        case ...300: self = .withProgress
-        case ...440: self = .withControls
+        case ...190: self = .artOnly
+        case ...260: self = .withProgress
+        case ...360: self = .withControls
         default: self = .full
         }
     }
@@ -122,7 +129,7 @@ struct CompactPlayerView: View {
                 // up but the art itself, so that is where it stops.
                 //
                 //   full         cover, scrubber, titles, transport,
-                //                secondary, and chapters past 640pt
+                //                secondary, and chapters past 560pt
                 //   withControls cover, scrubber, titles, transport
                 //   withProgress cover, scrubber, one line of title
                 //   artOnly      the cover alone, filling every point of
@@ -174,18 +181,30 @@ struct CompactPlayerView: View {
                     // brings the header straight back.
                     //
                     // No padding — the whole available rect is handed
-                    // straight to `CoverImage`. `contentMode: .fit` rather
-                    // than the default fill: at every other size the cover
-                    // is one square tile among other content, and cropping
-                    // an off-ratio one to fill its frame is the right trade
-                    // there. Here the cover *is* the content, so losing part
-                    // of a tall or wide cover to a crop would be losing the
-                    // one thing this tier exists to show in full — a letterboxed
-                    // band on either side is the honest cost of a window that
-                    // is not the same shape as the artwork, not a defect to
+                    // straight to `CoverImage`, and specifically
+                    // `outerGeometry`'s rect, not this inner
+                    // `GeometryReader`'s own — `outerGeometry` was measured
+                    // before `header`'s conditional removal and reflects the
+                    // true, full window size unconditionally; relying on
+                    // this inner reader instead would mean trusting it to
+                    // have already caught up with `header` disappearing,
+                    // which is exactly the category of assumption that kept
+                    // being wrong earlier this session. Using the value that
+                    // cannot be stale removes the question rather than
+                    // hoping the answer to it is yes.
+                    //
+                    // `contentMode: .fit` rather than the default fill: at
+                    // every other size the cover is one square tile among
+                    // other content, and cropping an off-ratio one to fill
+                    // its frame is the right trade there. Here the cover
+                    // *is* the content, so losing part of a tall or wide
+                    // cover to a crop would be losing the one thing this
+                    // tier exists to show in full — a letterboxed band on
+                    // either side is the honest cost of a window that is
+                    // not the same shape as the artwork, not a defect to
                     // hide.
                     CoverImage(thumb: app.nowPlayingThumb, contentMode: .fit)
-                        .frame(width: geometry.size.width, height: height)
+                        .frame(width: outerGeometry.size.width, height: outerGeometry.size.height)
                         .contentShape(.rect)
                         .onTapGesture { app.togglePlayPauseRespectingOffline() }
                 } else {
@@ -228,8 +247,11 @@ struct CompactPlayerView: View {
 
                             // Chapters need the most room, and give it up
                             // first — the last thing added going up, and the
-                            // first thing dropped going down.
-                            if height > 640 {
+                            // first thing dropped going down. Lowered from
+                            // 640 to 560 alongside the tier thresholds above,
+                            // keeping the same ~40pt margin above `full`'s
+                            // own threshold that it always had.
+                            if height > 560 {
                                 chapters
                             }
                         }
