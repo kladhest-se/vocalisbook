@@ -242,6 +242,40 @@ public struct SyncStore: Sendable {
         try database.writer.read { db in try OutboxRecord.fetchCount(db) }
     }
 
+    /// A month, past which a `timelineMissing` failure is not coming back.
+    ///
+    /// The same reasoning `CloudSyncStore.pruneInbox` uses for `cloud_progress`,
+    /// applied to the other table with the same shape: `outbox` has no foreign
+    /// key to `book`, deliberately, so a sign-out that purges the library cache
+    /// does not touch it, and a position recorded for a book that has since
+    /// gone — a different server signed into, or the book deleted from Plex —
+    /// has nothing left to push to. `push` already refuses to send it: it needs
+    /// the book's timeline cached locally first, and that cache is exactly what
+    /// is gone, so the entry fails at the lookup rather than reaching the
+    /// network. Nothing was ever at risk of landing on the wrong server. What
+    /// was missing is that nothing ever stopped asking — the entry retries
+    /// hourly, forever, failing the identical way every time.
+    public static let outboxGraceLifetime: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Forgets outbox entries that have been failing with `timelineMissing` for
+    /// longer than `outboxGraceLifetime`. Matched on the error text rather than
+    /// a dedicated column, since `timelineMissing` is the one failure that means
+    /// "this is not coming back" — a network error or a bad token should go on
+    /// retrying, and only this one earns forgetting.
+    @discardableResult
+    public func sweepStaleOutbox(before cutoff: Date = Date().addingTimeInterval(-outboxGraceLifetime)) throws -> Int {
+        try database.writer.write { db in
+            try db.execute(
+                sql: """
+                    DELETE FROM outbox
+                    WHERE last_error LIKE 'timelineMissing%' AND recorded_at < ?
+                    """,
+                arguments: [cutoff]
+            )
+            return db.changesCount
+        }
+    }
+
     // MARK: - Reconciliation
 
     /// Compares the local position against what the server reports.

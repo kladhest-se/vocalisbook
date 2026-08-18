@@ -267,6 +267,19 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
     ) {
         guard let key = downloadTask.taskDescription else { return }
 
+        // Checked before anything is written, not after: a full sync running
+        // at the exact moment this completes can have already evicted the row
+        // — see DownloadStore.evictMissingFromLibrary — if the book it belongs
+        // to no longer exists locally. Moving the file first and finding out
+        // afterwards, in the dispatched markComplete below, wrote a fully
+        // downloaded file with nothing pointing at it: not dangerous, since
+        // pruneOrphanedFiles reclaims it at the next launch, but a needless
+        // disk write for a file already known to belong to nothing. The
+        // network transfer has already happened either way — only the write
+        // is avoidable here, not the bandwidth already spent reaching this
+        // point.
+        guard (try? store.record(partCacheKey: key)) != nil else { return }
+
         // The file at `location` is deleted the moment this method returns, so
         // it has to be moved now, synchronously, on this queue — not after a
         // hop to the main actor.

@@ -292,6 +292,38 @@ public struct DownloadStore: Sendable {
         }
     }
 
+    /// Downloads whose book no longer exists in the local library, and the
+    /// paths to delete for them.
+    ///
+    /// A download survives on its own — nothing here assumes the book that
+    /// requested it is still cached, because signing back into the same
+    /// server should not cost a redownload. But signing into a *different*
+    /// server never reproduces the old rating keys, and nothing else ever
+    /// notices: the row and the file sit there, correctly downloaded,
+    /// permanently unreachable from any screen in the app.
+    ///
+    /// The same accounting `evictAll` does — the rows are this type's, the
+    /// bytes are the caller's — scoped to downloads a library sync has just
+    /// proven are never coming back rather than to all of them. A book
+    /// removed from Plex entirely is indistinguishable from one that is only
+    /// missing because a different server is now signed in, and is reclaimed
+    /// here the same way — that is the correct behaviour in both cases, not
+    /// a side effect tolerated for one of them.
+    public func evictMissingFromLibrary() throws -> [String] {
+        try database.writer.write { db in
+            let orphaned = try DownloadRecord.fetchAll(db, sql: """
+                SELECT * FROM download
+                WHERE book_rating_key NOT IN (SELECT rating_key FROM book)
+                """)
+            guard !orphaned.isEmpty else { return [] }
+            try db.execute(sql: """
+                DELETE FROM download
+                WHERE book_rating_key NOT IN (SELECT rating_key FROM book)
+                """)
+            return orphaned.compactMap(\.relativePath)
+        }
+    }
+
     public func evictableFinished() throws -> [String] {
         try database.writer.read { db in
             try String.fetchAll(db, sql: """

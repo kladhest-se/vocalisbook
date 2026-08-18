@@ -505,6 +505,22 @@ final class AppModel {
         servers = []
         sections = []
         phase = .signedOut
+
+        // The library is per-server and un-scoped in local queries — Continue
+        // Listening and Recently Finished join `book` and `progress` with no
+        // server filter at all, because until now nothing needed one. Without
+        // this, signing into a different server left the old one's book rows
+        // sitting in the cache, fully joinable, and they kept surfacing
+        // indefinitely for a server that no longer has them.
+        //
+        // `purgeMetadataCache()` only touches `library_section` (which cascades
+        // to `book`, `track`, `chapter`) — progress, bookmarks, and everything
+        // else iCloud is authoritative for are untouched. That's deliberate: if
+        // the next server happens to carry the same audiobook, BookIdentity
+        // matching in `LibraryStore` re-attaches the existing progress to it on
+        // its own. This only clears what was never anything but a cache of a
+        // server that is no longer the one signed in.
+        try? database?.purgeMetadataCache()
     }
 
     /// Marks the session degraded rather than signing out.
@@ -1348,6 +1364,7 @@ final class AppModel {
             client: server,
             store: library,
             progress: sync,
+            downloadStore: downloadStore,
             sectionID: sectionID,
             sectionKey: sectionKey
         )

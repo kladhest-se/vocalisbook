@@ -14,7 +14,8 @@
 	devices teams ios-device tvos-device \
 	ios-sim-install tvos-sim-install ipados-sim-install \
 	ipados-run ipados-install ipados-test ipados-destinations ipados-device \
-	ios-open ipados-open macos-open tvos-open core-open
+	ios-open ipados-open macos-open tvos-open core-open \
+	ios-archive macos-archive tvos-archive
 
 help:
 	@echo "  make packages          Core and all three Platform packages"
@@ -26,6 +27,7 @@ help:
 	@echo "  make ios-run           build and launch on a simulator, logs here"
 	@echo "  make ios-install       build signed and install on the device in DEVICE"
 	@echo "  make ios-open          generate and open the project in Xcode"
+	@echo "  make ios-archive       archive, signed, with a real build number"
 	@echo "  make ios-destinations  what is installed to run on"
 	@echo ""
 	@echo "  the same three verbs exist as ipados-*, macos-* and tvos-*"
@@ -415,6 +417,34 @@ ios-build: ios-project
 		CURRENT_PROJECT_VERSION=$$build; \
 	echo "  built VocalisBook $$version ($$build) — iOS"
 
+# The gap this closes: Xcode's own Product > Archive reads whatever is baked
+# into iOS.xcconfig, which is deliberately the number 1 — a build started
+# outside make was never meant to look like a real one. But archiving has no
+# make target of its own to run instead, so submitting through Xcode's GUI was
+# the only path there was, and every archive silently carried the same
+# sentinel build number until someone noticed App Store Connect refusing a
+# second upload.
+#
+# This bumps the counter the same way every other port target does and passes
+# it to `xcodebuild archive` directly, so the .xcarchive this produces already
+# has a real number before Xcode's Organizer ever opens it. Opened from there —
+# Window > Organizer, or `open build/VocalisBook-iOS.xcarchive` — to Validate
+# and Distribute exactly as before.
+ios-archive: ios-project
+	@$(REQUIRE_TEAM)
+	@echo "Signing with team $(TEAM_ID)"
+	@mkdir -p build
+	@set -e; $(call bump_build,iOS); \
+	xcodebuild archive -project $(IOS_PROJECT) -scheme VocalisBook \
+		-archivePath build/VocalisBook-iOS.xcarchive \
+		-destination 'generic/platform=iOS' \
+		-allowProvisioningUpdates \
+		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
+		CURRENT_PROJECT_VERSION=$$build; \
+	echo ""; \
+	echo "  archived VocalisBook $$version ($$build) — iOS"
+	@open build/VocalisBook-iOS.xcarchive
+
 ios-test: ios-project
 	@test -n "$(IOS_SIM_ID)" || { echo "No iPhone simulator installed. make ios-destinations"; exit 1; }
 	@xcodebuild test -project $(IOS_PROJECT) -scheme VocalisBook -destination 'id=$(IOS_SIM_ID)'
@@ -520,6 +550,22 @@ tvos-build: tvos-project
 		-sdk appletvsimulator -destination 'generic/platform=tvOS Simulator' \
 		CURRENT_PROJECT_VERSION=$$build; \
 	echo "  built VocalisBook $$version ($$build) — tvOS"
+
+# See ios-archive for why this exists at all.
+tvos-archive: tvos-project
+	@$(REQUIRE_TEAM)
+	@echo "Signing with team $(TEAM_ID)"
+	@mkdir -p build
+	@set -e; $(call bump_build,tvOS); \
+	xcodebuild archive -project $(TVOS_PROJECT) -scheme VocalisBook \
+		-archivePath build/VocalisBook-tvOS.xcarchive \
+		-destination 'generic/platform=tvOS' \
+		-allowProvisioningUpdates \
+		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
+		CURRENT_PROJECT_VERSION=$$build; \
+	echo ""; \
+	echo "  archived VocalisBook $$version ($$build) — tvOS"
+	@open build/VocalisBook-tvOS.xcarchive
 
 tvos-test: tvos-project
 	@test -n "$(TVOS_SIM_ID)" || { echo "No Apple TV simulator installed. make tvos-destinations"; exit 1; }
@@ -628,6 +674,24 @@ macos-run: macos-project
 	echo "  built VocalisBook $$version ($$build) — macOS"
 	@set -e; $(MACOS_APP_INFO); \
 	open "$$app"
+
+# See ios-archive for why this exists at all. No
+# -allowProvisioningDeviceRegistration here — that registers a specific test
+# device, which an archive for distribution has no reason to do.
+macos-archive: macos-project
+	@$(REQUIRE_TEAM)
+	@echo "Signing with team $(TEAM_ID)"
+	@mkdir -p build
+	@set -e; $(call bump_build,macOS); \
+	xcodebuild archive -project $(MACOS_PROJECT) -scheme VocalisBook \
+		-archivePath build/VocalisBook-macOS.xcarchive \
+		-destination 'generic/platform=macOS' \
+		-allowProvisioningUpdates \
+		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
+		CURRENT_PROJECT_VERSION=$$build; \
+	echo ""; \
+	echo "  archived VocalisBook $$version ($$build) — macOS"
+	@open build/VocalisBook-macOS.xcarchive
 
 macos-destinations:
 	@xcodebuild -project $(MACOS_PROJECT) -scheme VocalisBook -showdestinations 2>/dev/null \

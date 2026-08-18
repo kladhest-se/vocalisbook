@@ -70,6 +70,11 @@ final class AppModel {
     private(set) var sync: SyncStore!
     private(set) var sessions: SessionStore!
     private(set) var bookmarks: BookmarkStore!
+    // tvOS has no download UI — EphemeralStore's whole point is that nothing
+    // durable lives here — so this table stays empty in practice. It exists
+    // only so LibrarySync's constructor doesn't need a platform-conditional
+    // signature for the one thing that differs.
+    private(set) var downloadStore: DownloadStore!
     private(set) var server: PlexServerClient?
     private(set) var sectionID: String?
 
@@ -103,6 +108,7 @@ final class AppModel {
             // library should not wait behind it to appear.
             Task { await startCloudSync(database: database) }
             bookmarks = BookmarkStore(database: database)
+            downloadStore = DownloadStore(database: database)
 
             // Without this, CloudKit's silent pushes are never delivered and the
             // sync engine only learns about other devices when it next starts.
@@ -341,6 +347,13 @@ final class AppModel {
         servers = []
         sections = []
         phase = .signedOut
+
+        // See the iOS copy of this function for why: the local library cache
+        // is per-server and un-scoped in Continue Listening's query, so it
+        // survives a sign-out on its own and bleeds into whatever server
+        // signs in next. Progress and bookmarks are untouched — only the
+        // stale library rows go.
+        try? database?.purgeMetadataCache()
     }
 
     /// Marks the session degraded rather than signing out.
@@ -1110,6 +1123,7 @@ final class AppModel {
             client: server,
             store: library,
             progress: sync,
+            downloadStore: downloadStore,
             sectionID: sectionID,
             sectionKey: sectionKey
         )

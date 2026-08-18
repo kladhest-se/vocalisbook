@@ -4,13 +4,19 @@ import PlatformShared
 
 /// What is on this device.
 ///
-/// Browse, restricted to books with files on disk — the screen you want on a
-/// plane, and the one place where "what is taking up 12 GB" has an answer you
-/// can act on.
+/// Browse, restricted to books with files on disk — the one place where "what
+/// is taking up 12 GB" has an answer you can act on: every book, its size,
+/// remove one or all, transfers in progress.
 ///
-/// It had a tab briefly, in place of Collections, and gave it back: Collections
-/// is one of five things you browse by and belongs in the tab bar, while this is
-/// storage management and belongs in Settings next to the size it reports.
+/// It had a tab of its own, twice, both given back for the same reason: a tab
+/// is for a way of looking at the library, and this is storage management. A
+/// toolbar button was tried too and given back in turn — it answered "what is
+/// on this device" the same way regardless of which of those two questions
+/// somebody actually had. They are different questions now: a quick glance —
+/// "show me only what is downloaded" while still browsing — is a toggle in
+/// Browse's own toolbar, independent of offline mode; managing what is here —
+/// sizes, removing things, watching a transfer — is this screen, pushed from
+/// Settings, next to the size it reports.
 ///
 /// Books still downloading are shown too. A transfer in progress has bytes on
 /// disk and is exactly what somebody opens this screen to check on, so hiding it
@@ -26,16 +32,13 @@ struct OfflineView: View {
     private var columns: [GridItem] { .coverGrid(sizeClass) }
 
     var body: some View {
-        // No `NavigationStack` of its own, and now for two reasons.
-        //
-        // Settings pushes this and already has one; nesting them breaks both the
-        // push and the title. The Downloads tab has none, so it wraps this in a
-        // stack of its own — which only works because this view does not bring a
-        // second.
+        // No `NavigationStack` of its own — Settings pushes this and already
+        // has one; nesting them breaks both the push and the title.
         //
         // A screen that supplies its own stack cannot be pushed; one that
-        // supplies none can be either, and the caller decides. Settings declares
-        // no `String` destination, so the one below is free in both.
+        // supplies none can be either pushed or wrapped, and the caller
+        // decides. Kept this way even with one caller today, since it has had
+        // two before and may again.
         Group {
             ScrollView {
                 if !entries.isEmpty {

@@ -215,6 +215,14 @@ launching on a Tuesday.
 No macOS equivalent — the Mac app runs on the machine that builds it, so
 `make macos-run` is already the device case.
 
+Archiving for the App Store has its own verb rather than going through Xcode's
+Product ▸ Archive directly. Each port's `xcconfig` carries a build number of `1`
+as a deliberate, implausible sentinel — the fallback for an archive started
+outside `make` — and Xcode's own Archive action has no way to override it.
+`make ios-archive` bumps the real counter the same way every other build verb
+does and passes it straight to `xcodebuild archive`, opening the result in
+Organizer for Validate and Distribute exactly as before.
+
 ## Each platform in its own shape
 
 **iPhone and iPad** — a library grid with Continue Listening, a mini player above
@@ -227,9 +235,16 @@ stretched. Not a split view: Home is content, and content in a sidebar is a
 screen squeezed into a column beside an empty pane. The player turns on its side
 when the screen is wider than it is tall — landscape on a
 phone, either orientation on an iPad — with the cover beside the controls rather
-than above them. Seven tabs — Home, Browse, Authors, Series, Genres, Collections and Downloads
-— six ways of looking at the same library, and what of it is on the phone. Settings, the account and the
-offline switch are in the toolbar, on every tab.
+than above them. Five tabs — Home, Browse, Authors, Series and Genres — five ways
+of looking at the same library, and what of it is on the phone. Collections is
+not one of them for now — deferred rather than built halfway, and may return in
+a later release. A toggle beside search in Browse narrows the grid to what is
+already on the device, independent of offline mode; managing what is
+downloaded — sizes, removing things, watching a transfer — is a level inside
+Settings, next to the total it reports. Settings, the account and the
+offline switch are in the toolbar, on every tab: five tabs is also what keeps
+iOS from bucketing anything into its own system-drawn "More" screen, which the
+app's theme cannot reach.
 
 **Mac** — the same six sections as the other platforms, as sidebar rows rather
 than tabs, plus Downloads and History, with the transport docked at the bottom of
@@ -281,6 +296,9 @@ your password. Playback is direct play only; nothing is ever transcoded.
 
     make ios-open          generate and open the project in Xcode
                            also ipados-open, macos-open, tvos-open, core-open
+
+    make ios-archive       archive, signed, with a real build number
+                           also macos-archive, tvos-archive
 
     make help              everything else
 

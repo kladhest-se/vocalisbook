@@ -205,14 +205,6 @@ struct MainTabs: View {
         case .authors: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .series: SeriesView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .genres: GenresView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .collections: CollectionsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        // Only where downloads exist. The capability is true on this platform
-        // and checked anyway, so the tab and the feature cannot come apart.
-        case .downloads:
-            if PlatformCapabilities.supportsOfflineDownloads {
-                NavigationStack { OfflineView() }
-                    .miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-            }
         }
     }
 
@@ -459,10 +451,18 @@ extension View {
 /// Only so a tab can be brought forward from elsewhere — the bar itself works
 /// without it.
 enum MainTab: Hashable, CaseIterable {
-    // Genres sits between Authors and Collections: all three are ways of
-    // grouping the same books, and this is the one that groups by what a book
-    // *is* rather than by who made it or who shelved it.
-    case home, browse, authors, series, genres, collections, downloads
+    // Genres sits after Series: both are ways of grouping the same books, and
+    // this is the one that groups by what a book *is* rather than where it
+    // sits in a reading order.
+    //
+    // Collections and Downloads used to be tabs here. Collections is folded
+    // into Browse as a filter — one of the ways of narrowing the same grid,
+    // not a separate way of looking at the library — and Downloads moved to a
+    // toolbar button beside Settings, storage management rather than
+    // browsing. Five tabs rather than seven is also what keeps iOS from
+    // bucketing the last few into its own unthemed "More" screen, which only
+    // ever appears past five.
+    case home, browse, authors, series, genres
 
     var title: String {
         switch self {
@@ -471,8 +471,6 @@ enum MainTab: Hashable, CaseIterable {
         case .authors: "Authors"
         case .series: "Series"
         case .genres: "Genres"
-        case .collections: "Collections"
-        case .downloads: "Downloads"
         }
     }
 
@@ -483,8 +481,6 @@ enum MainTab: Hashable, CaseIterable {
         case .authors: "person"
         case .series: "books.vertical"
         case .genres: "theatermasks"
-        case .collections: "folder"
-        case .downloads: "arrow.down.circle"
         }
     }
 }

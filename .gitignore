@@ -13,6 +13,10 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 
+# `.xcarchive`s from `make <port>-archive`. Rebuilt fresh each time, same as
+# the .xcodeproj above — nothing in here is source.
+build/
+
 # Build counters, one per port, bumped by `make <port>-build`.
 #
 # Per machine, not per project: a build number here means "the nth build I have

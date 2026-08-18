@@ -17,16 +17,24 @@ public struct LibrarySync: Sendable {
     /// private and should stay so. Every caller already holds both.
     private let progress: SyncStore
 
+    /// Reclaims downloads a full sync has just proven belong to no book here
+    /// any more — see `evictMissingFromLibrary`. Row bookkeeping only; the
+    /// caller's `pruneOrphanedFiles` picks up the resulting dangling files on
+    /// its own schedule, the same as it does for any other orphaned file.
+    private let downloadStore: DownloadStore
+
     public init(
         client: PlexServerClient,
         store: LibraryStore,
         progress: SyncStore,
+        downloadStore: DownloadStore,
         sectionID: String,
         sectionKey: String
     ) {
         self.client = client
         self.store = store
         self.progress = progress
+        self.downloadStore = downloadStore
         self.sectionID = sectionID
         self.sectionKey = sectionKey
     }
@@ -181,6 +189,11 @@ public struct LibrarySync: Sendable {
         // request per series.
         if since == nil {
             _ = try? await refreshSeriesTags(onProgress: onSeries)
+            // Only here, not on an incremental sync: an incremental page is a
+            // partial view of the library by design, and a book missing from
+            // it means nothing. Only a full sync is a complete enough picture
+            // of "this book is not here" to act on.
+            _ = try? downloadStore.evictMissingFromLibrary()
         }
 
         try store.markSynced(sectionID: sectionID, at: startedAt)
@@ -372,6 +385,12 @@ public struct ProgressSync: Sendable {
                 result.failed += 1
             }
         }
+
+        // Timeline-missing failures older than a month are not coming back —
+        // see SyncStore.sweepStaleOutbox for why. Once per drain rather than
+        // its own schedule: this is already the one place examining every
+        // entry's current state.
+        _ = try? store.sweepStaleOutbox()
 
         result.remaining = try store.outboxDepth()
         return result

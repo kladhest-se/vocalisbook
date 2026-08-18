@@ -20,14 +20,18 @@ mentioning one of them is recognisable rather than mysterious.
 
 ## Still to do outside the build
 
-**Enable Push Notifications on the App ID.** Done. The entitlement asks for it
-and the portal has to grant it, or signing fails with a profile that does not
+**Enable Push Notifications on the new App ID.** Was done, for
+`se.kladhest.plextales` — the rename to `se.kladhest.vocalisbook` means a new
+App ID, and this has to be granted again on it. The entitlement asks for it and
+the portal has to grant it, or signing fails with a profile that does not
 match.
 
-**Deploy the CloudKit schema to Production.** Done. Everything tested before that
-ran against the development container. A build shipped before the schema is
-deployed syncs nothing, silently, which is the failure mode this app has spent
-the most effort eliminating everywhere else.
+**Create the CloudKit container and deploy its schema to Production.** Also
+done for the old container and not carried over — `iCloud.se.kladhest.vocalisbook`
+is a genuinely separate container, not a renamed one, and starts with no
+schema at all. Test against Development first, the same as before; a build
+shipped before Production is deployed syncs nothing, silently, which is the
+failure mode this app has spent the most effort eliminating everywhere else.
 
 **Screenshots**, one set per device class. Apple now scales the largest size down
 to cover the older classes, so the required sets are: iPhone 6.9" at 1320×2868,
@@ -49,6 +53,88 @@ the page is set by hand rather than by `date()`.
 
 **A support URL.** Somewhere a person can write to. The GitHub repository's
 issues page is enough and is already public.
+
+## App Review notes
+
+A demo account is provided: a Plex account signed into a test server whose
+library contains only public-domain and openly-licensed audiobooks. Built
+specifically so the review copy shows no commercial cover art or protected
+material at all — see item 7 below, which this removes rather than merely
+answers.
+
+A screen recording is attached alongside the credentials, not instead of
+them — Apple's own request lists the two as separate items, and a working
+account makes the recording more useful rather than less: it stops being
+"trust us this works" and becomes a faithful preview of exactly what the
+reviewer is about to reproduce themselves. Recorded continuously on a real
+device rather than as edited clips, since a cut reads as hiding something.
+Covers, in order: launching the app; signing in through Plex's PIN flow,
+including the local network permission prompt — `NSLocalNetworkUsageDescription`
+appears the moment the app looks for a server on the network, and it should be
+left to appear on screen and be granted there rather than pre-approved before
+recording starts, since it is the app's one prompt for sensitive device
+access and Apple's list asks for it by name; browsing by author and series;
+playing a book with real chapters and a bookmark; downloading a book and
+switching to offline mode; and the listening history screen.
+
+## Additional information for App Review
+
+Apple's own seven-item list, from a previous submission's request for more
+detail. Kept here rather than only in the notes field, since the field has a
+character limit this does not.
+
+**1. Screen recording.** See above.
+
+**2. Devices and OS versions tested on.** _Tommy to fill in._
+
+**3. What the app does, and for whom.** VocalisBook is a native audiobook
+player for a Plex Media Server the user already owns and runs. Plex's own
+apps present audiobooks as albums of music tracks — no book-level position, no
+chapter navigation, no per-book playback speed. VocalisBook adds the layer a
+Plex-based library needs to be listened to as audiobooks rather than browsed
+as music: a position kept in book-absolute time across however many files a
+book is split into, chapters from whichever source actually has them,
+adjustable speed remembered per book, a fading sleep timer, labelled
+bookmarks, and offline downloads. The audience is self-hosted media
+enthusiasts who already run Plex and want their audiobook collection to
+behave like one.
+
+**4. Setup and access instructions.** Sign-in uses Plex's own account system
+via plex.tv (`ASWebAuthenticationSession`, so the app never sees a password).
+On first launch the app requests a PIN and opens a web view to complete
+sign-in with the account below. Once signed in, the app lists the Plex
+servers visible to that account; select the test server and the library
+loads automatically.
+
+    Test account:  _email / password, to fill in_
+    Test server:   _name, reachable without VPN or local network access_
+    Test library:  audiobooks that are entirely public-domain or openly licensed
+
+**5. External services the app depends on for core functionality.**
+
+- **Plex Media Server** — the user's own, self-hosted. Source of the
+  audiobook library, artwork, and file streaming.
+- **plex.tv** — Plex's authentication service. Sign-in only; no data beyond
+  an auth token passes through it.
+- **Apple CloudKit (iCloud)** — cross-device sync of bookmarks, playback
+  position, and listening history, under the user's own iCloud account.
+  Optional: the app functions fully with sync switched off.
+
+No analytics, advertising, or third-party SDK of any kind. No payment
+processor — the app is free with no in-app purchases.
+
+**6. Regional differences.** None. Every screen is entirely a function of
+what the connected Plex server's library contains, and there is no
+server-side gating in the app itself. Functions consistently across all
+regions.
+
+**7. Regulated industry or protected third-party material.** VocalisBook is a
+general-purpose media client, the same category as Plex's own official apps,
+Infuse, and Swiftfin — it displays whatever content the connected server's
+owner has legally added to their own library, and hosts, bundles, or
+distributes nothing itself. The demo account's library contains only
+public-domain and openly-licensed audiobooks specifically so the review copy
+raises no question about protected material at all.
 
 ## Draft description
 
@@ -112,7 +198,9 @@ Publishable as-is at a URL of your choosing.
 
 ## Before pressing Upload
 
-- The version is 1.0.0 in `Config`, and the build number increments per port.
+- The version is 1.0.0 in `Config`, and `make <port>-archive` bumps the build
+  number and passes it to `xcodebuild archive` directly — Xcode's own Archive
+  action alone would carry the deliberate `1` sentinel instead.
 - `make publish-all` passes, including the tests.
 - A real device has run the build, not only a simulator.
 - Sync has been checked between two devices — pause on one, and the other should

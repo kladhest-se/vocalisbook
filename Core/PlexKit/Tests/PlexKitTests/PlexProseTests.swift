@@ -82,4 +82,53 @@ struct PlexProseTests {
         let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
         #expect(book.summary == "Bought at Marks & Spencer.\u{00A0}Then read.")
     }
+
+    /// The visible symptom: a title arriving from Plex as `HjÃ¤ltar och
+    /// monster pÃ¥ himlavalvet` — correct Swedish, UTF-8 encoded, then misread
+    /// as Latin-1 and saved as if that misreading were the real text. Nothing
+    /// in this app's own transport does this; it arrives already broken.
+    @Test("UTF-8 bytes misread as Latin-1 are repaired")
+    func mojibakeIsRepaired() {
+        #expect(
+            PlexProse.repairingMojibake("HjÃ¤ltar och monster pÃ¥ himlavalvet")
+                == "Hjältar och monster på himlavalvet"
+        )
+    }
+
+    /// The property that makes this safe to run unconditionally rather than
+    /// needing to first detect which text is broken: a genuine accented
+    /// character has no valid two-step misreading as anything else, so the
+    /// repair's own round trip fails and the original is returned untouched.
+    @Test("Text that was never corrupted is returned unchanged")
+    func alreadyCorrectTextIsUntouched() {
+        let correct = "Café Society"
+        #expect(PlexProse.repairingMojibake(correct) == correct)
+
+        let ascii = "The Hobbit"
+        #expect(PlexProse.repairingMojibake(ascii) == ascii)
+
+        let empty = ""
+        #expect(PlexProse.repairingMojibake(empty) == empty)
+    }
+
+    /// Text outside Latin-1 entirely — Cyrillic, CJK, emoji — cannot be
+    /// misread as Latin-1 bytes in the first place, so the first guard fails
+    /// and nothing is attempted.
+    @Test("Text with no Latin-1 reading at all is returned unchanged")
+    func nonLatin1TextIsUntouched() {
+        let cyrillic = "Дюна"
+        #expect(PlexProse.repairingMojibake(cyrillic) == cyrillic)
+    }
+
+    /// Same boundary as the summary test above, for the field the bug was
+    /// actually reported against: an author name, not a synopsis.
+    @Test("A corrupted author name comes out repaired")
+    func bookAuthorIsRepaired() throws {
+        let json = """
+        {"ratingKey":"900","title":"A Book",
+         "parentTitle":"HjÃ¤ltar Publishing"}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+        #expect(book.author == "Hjältar Publishing")
+    }
 }

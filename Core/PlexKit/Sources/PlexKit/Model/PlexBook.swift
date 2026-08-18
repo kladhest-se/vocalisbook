@@ -146,13 +146,18 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         }
         self.ratingKey = ratingKey
         self.key = c.plexString(.key) ?? "/library/metadata/\(ratingKey)/children"
-        self.title = c.plexString(.title) ?? "Untitled"
-        self.titleSort = c.plexString(.titleSort)
-        self.author = c.plexString(.parentTitle)
+        self.title = c.plexString(.title).map(PlexProse.repairingMojibake) ?? "Untitled"
+        self.titleSort = c.plexString(.titleSort).map(PlexProse.repairingMojibake)
+        self.author = c.plexString(.parentTitle).map(PlexProse.repairingMojibake)
         self.authorRatingKey = c.plexString(.parentRatingKey)
         // Escaped on the wire; decoded once, here, rather than in each of the
-        // three apps that display it and the store that caches it.
-        self.summary = c.plexString(.summary).map(PlexProse.decodingEntities)
+        // three apps that display it and the store that caches it. The
+        // encoding repair runs first — an ampersand is ASCII either way, so
+        // order between the two never matters, but reading it as "fix what the
+        // bytes say, then fix how they're escaped" is the honest one.
+        self.summary = c.plexString(.summary)
+            .map(PlexProse.repairingMojibake)
+            .map(PlexProse.decodingEntities)
         self.year = c.plexInt(.year)
         self.thumb = c.plexString(.thumb)
         self.art = c.plexString(.art)
@@ -163,7 +168,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         self.updatedAt = c.plexDate(.updatedAt)
         self.lastViewedAt = c.plexDate(.lastViewedAt)
         self.viewOffsetMs = c.plexInt(.viewOffset)
-        self.studio = c.plexString(.studio)
+        self.studio = c.plexString(.studio).map(PlexProse.repairingMojibake)
         // Attribute or child, because Plex builds differ.
         //
         // The contract says to support both and to prefer the SpokenMeta one:
@@ -180,14 +185,19 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         // Missing entirely on most responses, which is not an error: the list
         // endpoint omits tags and the detail endpoint carries them.
         let tags = (try? c.decodeIfPresent([Tag].self, forKey: .Genre)) ?? []
-        self.genres = tags.compactMap(\.tag).filter { !$0.isEmpty }
+        self.genres = tags.compactMap(\.tag).map(PlexProse.repairingMojibake).filter { !$0.isEmpty }
 
         let styles = (try? c.decodeIfPresent([Tag].self, forKey: .Style)) ?? []
-        self.narrators = styles.compactMap(\.tag).filter { !$0.isEmpty }
+        self.narrators = styles.compactMap(\.tag).map(PlexProse.repairingMojibake).filter { !$0.isEmpty }
 
-        // One list, two meanings, split on the documented prefix.
+        // One list, two meanings, split on the documented prefix. Repaired
+        // before the split: the prefixes themselves — `Series:`, `Sequence:`
+        // — are English and ASCII, so the repair leaves them exactly alone,
+        // and everything after one is a name that can carry the same
+        // corruption as any other field here.
         let moods = ((try? c.decodeIfPresent([Tag].self, forKey: .Mood)) ?? [])
             .compactMap(\.tag)
+            .map(PlexProse.repairingMojibake)
             .filter { !$0.isEmpty }
 
         self.series = moods

@@ -82,6 +82,12 @@ The first release. Everything below is new.
 - The player no longer opens when a book cannot start — including when VocalisBook
   needs to ask which position to keep, a question that could not be asked while
   the player was covering it.
+- Book titles, author names and other metadata containing accented characters
+  no longer display as garbled text (e.g. "GarcÃa" instead of "García") when
+  Plex's metadata agent has stored them with the wrong encoding.
+- Signing out and into a different Plex server no longer leaves the old
+  server's books showing in Continue listening. Downloads from a server you've
+  since switched away from are also reclaimed rather than sitting unseen.
 - Fixed a crash when two devices were playing at once, which then repeated on
   every launch until the app was reinstalled.
 
@@ -181,8 +187,10 @@ On the Apple TV: the sessions under an expanded day can be reached and read, and
 Settings rows stay legible when selected — several themes put white text on the
 system's white highlight.
 
-Downloads is a tab on iPhone and iPad, as it is a sidebar row on the Mac: what is
-on this device, what it is taking up, and a way to remove it.
+Downloads management is a level inside Settings on iPhone and iPad, as it is a
+sidebar row on the Mac: what is on this device, what it is taking up, and a way
+to remove it. A quicker glance — what is already downloaded, while still
+browsing — is a toggle beside search in Browse.
 
 ### Per platform
 

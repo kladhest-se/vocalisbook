@@ -28,10 +28,12 @@ public struct PlexCollection: Decodable, Sendable, Hashable, Identifiable {
         }
         self.ratingKey = ratingKey
         self.key = c.plexString(.key) ?? "/library/collections/\(ratingKey)/children"
-        self.title = c.plexString(.title) ?? "Untitled"
-        self.titleSort = c.plexString(.titleSort)
+        self.title = c.plexString(.title).map(PlexProse.repairingMojibake) ?? "Untitled"
+        self.titleSort = c.plexString(.titleSort).map(PlexProse.repairingMojibake)
         self.childCount = c.plexInt(.childCount)
         self.thumb = c.plexString(.thumb)
-        self.summary = c.plexString(.summary).map(PlexProse.decodingEntities)
+        self.summary = c.plexString(.summary)
+            .map(PlexProse.repairingMojibake)
+            .map(PlexProse.decodingEntities)
     }
 }

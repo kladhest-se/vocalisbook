@@ -220,6 +220,58 @@ struct StoreTests {
         #expect(afterBackoff.count == 1)
     }
 
+    @Test("A timeline-missing failure older than the grace period is swept")
+    func staleTimelineMissingIsSwept() throws {
+        let db = try makeDatabase()
+        let sync = SyncStore(database: db)
+        let longAgo = Date().addingTimeInterval(-40 * 24 * 60 * 60)
+        try sync.recordPosition(bookRatingKey: "900", absoluteMs: 42_000, at: longAgo)
+
+        let queued = try sync.pendingOutbox()
+        let entry = try #require(queued.first)
+        try sync.markFailed(entry: entry, error: "timelineMissing(ratingKey: \"900\")")
+
+        let removed = try sync.sweepStaleOutbox()
+        #expect(removed == 1)
+        let depth = try sync.outboxDepth()
+        #expect(depth == 0)
+    }
+
+    @Test("A recent timeline-missing failure is not swept yet")
+    func recentTimelineMissingSurvives() throws {
+        let db = try makeDatabase()
+        let sync = SyncStore(database: db)
+        try sync.recordPosition(bookRatingKey: "900", absoluteMs: 42_000)
+
+        let queued = try sync.pendingOutbox()
+        let entry = try #require(queued.first)
+        try sync.markFailed(entry: entry, error: "timelineMissing(ratingKey: \"900\")")
+
+        let removed = try sync.sweepStaleOutbox()
+        #expect(removed == 0, "a month has not passed")
+        let depth = try sync.outboxDepth()
+        #expect(depth == 1)
+    }
+
+    @Test("A transient failure is never swept, however old")
+    func transientFailureIsNeverSwept() throws {
+        let db = try makeDatabase()
+        let sync = SyncStore(database: db)
+        let longAgo = Date().addingTimeInterval(-100 * 24 * 60 * 60)
+        try sync.recordPosition(bookRatingKey: "900", absoluteMs: 42_000, at: longAgo)
+
+        let queued = try sync.pendingOutbox()
+        let entry = try #require(queued.first)
+        // Not timelineMissing: a network error should go on retrying rather
+        // than being forgotten, however long the server has been unreachable.
+        try sync.markFailed(entry: entry, error: "connection refused")
+
+        let removed = try sync.sweepStaleOutbox()
+        #expect(removed == 0)
+        let depth = try sync.outboxDepth()
+        #expect(depth == 1)
+    }
+
     @Test("Adopting a remote position does not queue it straight back")
     func adoptRemoteDoesNotRequeue() throws {
         let db = try makeDatabase()

@@ -745,6 +745,13 @@ final class AppModel {
         servers = []
         sections = []
         phase = .signedOut
+
+        // See the iOS copy of this function for why: the local library cache
+        // is per-server and un-scoped in Continue Listening's query, so it
+        // survives a sign-out on its own and bleeds into whatever server
+        // signs in next. Progress and bookmarks are untouched — only the
+        // stale library rows go.
+        try? database?.purgeMetadataCache()
     }
 
     func handle(_ error: any Error) {
@@ -1299,6 +1306,7 @@ final class AppModel {
             client: server,
             store: library,
             progress: sync,
+            downloadStore: downloadStore,
             sectionID: sectionID,
             sectionKey: sectionKey
         )

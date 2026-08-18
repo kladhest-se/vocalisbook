@@ -44,6 +44,7 @@ struct IncrementalSyncTests {
             client: client,
             store: library,
             progress: SyncStore(database: db),
+            downloadStore: DownloadStore(database: db),
             sectionID: "srv:2",
             sectionKey: "2"
         )

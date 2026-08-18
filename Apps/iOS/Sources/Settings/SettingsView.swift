@@ -123,17 +123,21 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(theme.tertiaryText)
 
-                        // The size, and no link beside it.
+                        // The full picture — every book, sizes, remove one or
+                        // all, transfers in progress — is a level down rather
+                        // than repeated here. `StorageRow` keeps the total and
+                        // the one shortcut worth having inline: clearing what
+                        // is already finished. "What is taking up twelve
+                        // gigabytes" is a glance; managing it is a task, and a
+                        // task earns its own screen.
                         //
-                        // Downloads is a tab now, as it is a sidebar row on the
-                        // Mac. A second route from three levels inside Settings
-                        // to a screen already in the tab bar is a longer way to
-                        // somewhere somebody can already see.
-                        //
-                        // The number stays: "what is taking up twelve
-                        // gigabytes" is a settings question, and the answer per
-                        // book is one tap away in the tab.
+                        // A quicker glance at what is downloaded, without the
+                        // management, lives in Browse now — a toggle beside
+                        // search rather than a trip through here.
                         StorageRow()
+                        NavigationLink("Manage Downloads") {
+                            OfflineView()
+                        }
                     }
                 }
 

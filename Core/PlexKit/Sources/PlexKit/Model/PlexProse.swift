@@ -65,6 +65,39 @@ public enum PlexProse {
         return out
     }
 
+    /// Repairs text that is correct UTF-8, misread as Latin-1 somewhere
+    /// upstream, and re-saved as if that misreading were the real text.
+    ///
+    /// The signature is specific: an accented character that should be one
+    /// byte pair becomes two separate characters — `ä` arrives as `Ã¤`, `í`
+    /// as `Ã` followed by a soft hyphen that most renderers draw as nothing,
+    /// which is why the damage often reads as a single stray `Ã` rather than
+    /// two visible characters. SpokenMeta and Plex's own agents are not
+    /// consistent about the encoding they write metadata in, and this arrives
+    /// already broken in the API response — nothing this app's own transport
+    /// does causes it, and nothing here can ask Plex to store it correctly.
+    ///
+    /// The repair is the two steps in reverse: read the characters as if they
+    /// were Latin-1 bytes, then decode those bytes as UTF-8. Applied to text
+    /// that was never corrupted this way, both steps typically fail outright
+    /// rather than producing new garbage — a genuine accented character has
+    /// no valid two-step reading as anything else, and `String(data:encoding:)`
+    /// returns `nil` rather than guessing. That is what makes this safe to run
+    /// unconditionally rather than needing to first detect which text is
+    /// broken.
+    public static func repairingMojibake(_ text: String) -> String {
+        // The overwhelmingly common case, and worth not allocating for: pure
+        // ASCII cannot be mojibake by this mechanism, since every byte
+        // involved is already identical under both encodings.
+        guard text.utf8.contains(where: { $0 > 0x7F }) else { return text }
+
+        guard let misreadAsLatin1 = text.data(using: .isoLatin1),
+              let repaired = String(data: misreadAsLatin1, encoding: .utf8)
+        else { return text }
+
+        return repaired
+    }
+
     /// Long enough for `#x1F600`, short enough that an ampersand followed by a
     /// clause and a semicolon is not mistaken for an entity.
     private static let maxEntityLength = 10

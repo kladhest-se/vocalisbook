@@ -6,6 +6,7 @@ import PlatformShared
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.theme) private var theme
     @State private var model = LibraryModel()
     @State private var selection: String?
 
@@ -26,6 +27,7 @@ struct LibraryView: View {
             grid
                 .navigationTitle("Library")
                 .accountToolbar()
+                .toolbar { downloadedFilter }
                 .navigationDestination(item: $selection) { ratingKey in
                     BookDetailView(ratingKey: ratingKey)
                 }
@@ -33,6 +35,32 @@ struct LibraryView: View {
         .task {
             model.reload(app: app)
             await model.refreshIfStale(app: app)
+        }
+    }
+
+    /// Narrows the grid to books already on this device, independent of
+    /// offline mode — the two ask different questions. Offline mode says
+    /// "stop reaching the server at all"; this says "show me what I would
+    /// keep if I turned that on", which is exactly what somebody deciding
+    /// what to remove before a trip wants to see while still online.
+    ///
+    /// Collections was here too, briefly, as a second filter beside this one
+    /// — folded back out rather than kept half-finished. It wants its own
+    /// design, not a slot borrowed from this one, and may return in a later
+    /// release.
+    private var downloadedFilter: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                model.showingDownloadedOnly.toggle()
+                model.reload(app: app)
+            } label: {
+                Label(
+                    "Downloaded",
+                    systemImage: model.showingDownloadedOnly
+                        ? "arrow.down.circle.fill" : "arrow.down.circle"
+                )
+            }
+            .tint(model.showingDownloadedOnly ? theme.accent : nil)
         }
     }
 
@@ -81,10 +109,13 @@ struct LibraryView: View {
                         .padding(.top, 60)
                     } else {
                         ContentUnavailableView(
-                            model.search.isEmpty ? "No books yet" : "Nothing matched",
-                            systemImage: "books.vertical",
+                            model.showingDownloadedOnly ? "Nothing downloaded"
+                                : model.search.isEmpty ? "No books yet" : "Nothing matched",
+                            systemImage: model.showingDownloadedOnly ? "arrow.down.circle" : "books.vertical",
                             description: Text(
-                                model.search.isEmpty
+                                model.showingDownloadedOnly
+                                ? "Nothing in your library is downloaded to this device yet."
+                                : model.search.isEmpty
                                 ? "Pull down to fetch your library from Plex."
                                 : "Try a different title or author."
                             )
@@ -93,6 +124,7 @@ struct LibraryView: View {
                     }
                 }
             }
+        .background(theme.background.ignoresSafeArea())
         .refreshable { await model.refresh(app: app) }
         .searchable(text: $model.search, prompt: "Title or author")
         .onChange(of: model.search) { _, _ in model.reload(app: app) }
@@ -115,6 +147,10 @@ struct LibraryView: View {
 final class LibraryModel {
     private(set) var books: [BookRecord] = []
     private(set) var isRefreshing = false
+
+    /// Narrows the grid to books already on this device — see `downloadedFilter`
+    /// for why this is separate from `app.isOffline` rather than reusing it.
+    var showingDownloadedOnly = false
 
     /// Whether this refresh has already put something on screen.
     ///
@@ -149,10 +185,15 @@ final class LibraryModel {
             loadFailed = false
             return
         }
+        // Either condition narrows to what is on disk: offline mode says
+        // nothing here should touch the network, and this button says show me
+        // what I would keep if it did. Both true is not a conflict — the
+        // grid is just downloaded-only for two reasons instead of one.
+        let downloadedOnly = app.isOffline || showingDownloadedOnly
         do {
             books = try search.isEmpty
-                ? library.books(sectionID: sectionID, downloadedOnly: app.isOffline)
-                : library.search(search, downloadedOnly: app.isOffline)
+                ? library.books(sectionID: sectionID, downloadedOnly: downloadedOnly)
+                : library.search(search, downloadedOnly: downloadedOnly)
             loadFailed = false
         } catch {
             books = []
@@ -222,6 +263,7 @@ final class LibraryModel {
 struct BookTile: View {
     let book: BookRecord
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -246,11 +288,12 @@ struct BookTile: View {
 
             Text(book.title)
                 .font(.caption.weight(.medium))
+                .foregroundStyle(theme.text)
                 .lineLimit(2)
             if let author = book.author {
                 Text(author)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.tertiaryText)
                     .lineLimit(1)
             }
         }
