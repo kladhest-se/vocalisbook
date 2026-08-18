@@ -59,7 +59,7 @@ const STORES = [
 ];
 
 const GITHUB = 'https://github.com/kladhest-se/vocalisbook';
-const SPOKENMETA = 'https://github.com/kladhest-se/SpokenMeta';
+const VOCALISMETA = 'https://vocalismeta.kladhest.se';
 const CONTACT_EMAIL = 'kladhest@tutamail.com';
 
 /**
@@ -304,11 +304,11 @@ $tv = screenshots('tvos');
 <section>
     <div class="wrap">
         <div class="callout">
-            <h2>Pair it with SpokenMeta</h2>
+            <h2>Pair it with VocalisMeta</h2>
             <p>
                 Plex's music agents describe albums, not books — so an audiobook library
                 arrives with the narrator as the artist and no series, no author list and
-                no edition. <a href="<?= e(SPOKENMETA) ?>">SpokenMeta</a> is a metadata
+                no edition. <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> is a metadata
                 agent for exactly this, and VocalisBook reads what it writes: authors,
                 narrators, series and reading order, and a durable identity per book so
                 your place follows the book rather than a row number on one server.
@@ -355,7 +355,7 @@ $tv = screenshots('tvos');
             </p>
             <p>
                 <a href="<?= e(GITHUB) ?>">Source on GitHub</a> ·
-                <a href="<?= e(SPOKENMETA) ?>">SpokenMeta</a> ·
+                <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> ·
                 <a href="mailto:<?= e(CONTACT_EMAIL) ?>"><?= e(CONTACT_EMAIL) ?></a>
             </p>
         </div>

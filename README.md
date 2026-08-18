@@ -333,8 +333,9 @@ not committed. Edit the `project.yml`, never the `.xcodeproj`.
 
 ## Metadata
 
-Built against [VocalisMeta](https://github.com/kladhest-se/vocalismeta) and its
-Client Identity Contract v1 (`CLIENT_INTEGRATION.md` in that repository) — renamed
+Built against [VocalisMeta](https://vocalismeta.kladhest.se) and its
+Client Identity Contract v1 (`CLIENT_INTEGRATION.md` in
+[its GitHub repository](https://github.com/kladhest-se/vocalismeta)) — renamed
 from SpokenMeta without a wire-contract change, so every `spokenmeta:` progress
 key and the `com.plexapp.agents.spokenmeta` provider string in this codebase are
 correct as they stand and are not touched by the rename.
