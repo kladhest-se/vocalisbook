@@ -109,16 +109,12 @@ struct MainTabs: View {
                 .tabItem { Label("Series", systemImage: "books.vertical") }
                 .tag(MainTab.series)
 
-            // Between Series and Collections: all four group the same books,
-            // and this is the one that groups by what a book is rather than by
-            // who wrote it, what it follows, or who shelved it.
+            // Genres sits after Series: all three group the same books, and
+            // this is the one that groups by what a book is rather than by
+            // who wrote it or what it follows.
             GenresView()
                 .tabItem { Label("Genres", systemImage: "theatermasks") }
                 .tag(MainTab.genres)
-
-            CollectionsView()
-                .tabItem { Label("Collections", systemImage: "folder") }
-                .tag(MainTab.collections)
 
             // A tab, not a pushed screen.
             //
@@ -159,5 +155,5 @@ struct MainTabs: View {
 /// Pressing play jumps straight to the player rather than leaving you on the
 /// book screen wondering whether anything happened.
 enum MainTab: Hashable {
-    case home, browse, authors, series, genres, collections, history, settings, nowPlaying
+    case home, browse, authors, series, genres, history, settings, nowPlaying
 }

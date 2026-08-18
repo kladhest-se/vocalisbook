@@ -139,7 +139,7 @@ system holds them rather than failing them. Settings lists what is on the device
 way to remove them individually or all at once.
 
 **Offline mode**, a switch beside the account button. The whole library — books,
-authors, collections, search, continue listening — narrows to what is fully
+authors, search, continue listening — narrows to what is fully
 downloaded, and the app stops contacting the server: no refresh, no progress
 push, no dashboard heartbeat. Meant for a plane, and for the ordinary case of
 wanting to see only what will actually play. A partly downloaded book is treated
@@ -246,7 +246,7 @@ offline switch are in the toolbar, on every tab: five tabs is also what keeps
 iOS from bucketing anything into its own system-drawn "More" screen, which the
 app's theme cannot reach.
 
-**Mac** — the same six sections as the other platforms, as sidebar rows rather
+**Mac** — the same five sections as the other platforms, as sidebar rows rather
 than tabs, plus Downloads and History, with the transport docked at the bottom of
 the window. Refresh, offline mode and the account sit beside the search
 field, and are in the View and app menus too, with ⌘R and ⇧⌘O rather than hidden in a sheet. Below 620pt wide the window becomes a

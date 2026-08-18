@@ -54,32 +54,31 @@ struct LibraryView: View {
                 // The same five as the phone and the television, in the same
                 // order. A sidebar row and a tab are the same idea in different
                 // furniture, and there is no reason to learn the app twice.
-                Label("Home", systemImage: "house")
-                    .tag(SidebarItem.home)
-                Label("Browse", systemImage: "square.grid.2x2")
-                    .tag(SidebarItem.allBooks)
+                sidebarRow("Home", "house", tag: .home)
+                sidebarRow("Browse", "square.grid.2x2", tag: .allBooks)
 
                 // Directly under "All books", with no section header: these are
-                // five ways into the same library, and a heading called
+                // four ways into the same library, and a heading called
                 // "Library" said nothing while pushing three of them below a
                 // Continue listening section that grows.
-                Label("Authors", systemImage: "person")
-                    .tag(SidebarItem.authors)
-                Label("Series", systemImage: "books.vertical")
-                    .tag(SidebarItem.series)
-                Label("Genres", systemImage: "theatermasks")
-                    .tag(SidebarItem.genres)
-                Label("Collections", systemImage: "folder")
-                    .tag(SidebarItem.collections)
+                sidebarRow("Authors", "person", tag: .authors)
+                sidebarRow("Series", "books.vertical", tag: .series)
+                sidebarRow("Genres", "theatermasks", tag: .genres)
+
+                // One wordless divider rather than a second "Library" heading
+                // nobody asked to read: everything above is a way of looking at
+                // the same books, everything below is a tool. The shape says
+                // that without a label having to.
+                Divider()
+                    .padding(.vertical, 6)
+
                 // Only where downloads exist. The capability is true on this
                 // platform and checked anyway, so the row and the feature cannot
                 // come apart if that ever changes.
                 if PlatformCapabilities.supportsOfflineDownloads {
-                    Label("Downloads", systemImage: "arrow.down.circle")
-                        .tag(SidebarItem.downloads)
+                    sidebarRow("Downloads", "arrow.down.circle", tag: .downloads)
                 }
-                Label("History", systemImage: "flame")
-                    .tag(SidebarItem.history)
+                sidebarRow("History", "flame", tag: .history)
 
                 // No Continue listening section here.
                 //
@@ -90,6 +89,7 @@ struct LibraryView: View {
                 // copy of one screen's content, in a worse form, in the way of
                 // everything else.
             }
+            .padding(.top, 8)
             // Flush to the window, top to bottom, square.
             //
             // `.sidebar` insets its rows and rounds the selection into a pill
@@ -123,8 +123,6 @@ struct LibraryView: View {
                     SeriesView()
                 case .genres:
                     GenresView()
-                case .collections:
-                    CollectionsView()
                 case .downloads:
                     DownloadsView()
                 case .history:
@@ -202,6 +200,38 @@ struct LibraryView: View {
         }
         // Starting or finishing a book changes what belongs in the sidebar.
         .onChange(of: app.libraryRevision) { _, _ in model.reload(app: app) }
+    }
+
+    /// One row, coloured by whether it is the one on screen.
+    ///
+    /// `List(selection:)` draws its own highlight by default — the system's
+    /// grey, the same in every theme, on a sidebar that otherwise commits to
+    /// eight of them. A tinted row background and a filled icon read as this
+    /// app's own selection rather than the platform's, matching the accent
+    /// every other selected state in the app already uses — the iPad's tab
+    /// bar, a focused row on the television, a chosen theme in Settings.
+    ///
+    /// The `.fill` suffix is assumed to exist for every symbol passed in here
+    /// rather than checked — true for the seven in use, and worth confirming
+    /// again before reaching for an eighth: a name that does not resolve
+    /// renders as nothing rather than an error.
+    @ViewBuilder
+    private func sidebarRow(_ title: String, _ symbol: String, tag: SidebarItem) -> some View {
+        let isSelected = selection == tag
+        Label {
+            Text(title)
+                .foregroundStyle(isSelected ? theme.text : theme.secondaryText)
+        } icon: {
+            Image(systemName: isSelected ? "\(symbol).fill" : symbol)
+                .foregroundStyle(isSelected ? theme.accent : theme.secondaryText)
+        }
+        .tag(tag)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? theme.accent.opacity(0.15) : .clear)
+                .padding(.vertical, 1)
+        )
+        .padding(.vertical, 3)
     }
 
     /// The controls, on their own row under the title bar.
@@ -590,7 +620,6 @@ enum SidebarItem: Hashable {
     case authors
     case series
     case genres
-    case collections
     case downloads
     case history
     case book(String)
