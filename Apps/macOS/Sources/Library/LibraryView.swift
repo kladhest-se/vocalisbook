@@ -604,6 +604,13 @@ struct BookTile: View {
 /// without a network. `ArtworkCache` keeps the bytes on disk.
 struct CoverImage: View {
     let thumb: String?
+    /// `.fill` everywhere this already was — a grid tile with a letterboxed
+    /// grey band around an off-ratio cover reads as a mistake, and cropping
+    /// is the right trade there. `.fit` exists for the one place that isn't
+    /// true: the compact player's full-bleed tier, where the cover *is* the
+    /// content rather than one tile among many, and losing part of the
+    /// artwork to a crop is the mistake instead.
+    var contentMode: ContentMode = .fill
     @Environment(AppModel.self) private var app
     @State private var image: NSImage?
 
@@ -638,12 +645,14 @@ struct CoverImage: View {
                 // why the player looked broken on exactly the books whose
                 // artwork is not square.
                 //
-                // Fill rather than fit, still: a cover with a letterboxed grey
-                // band around it looks like a mistake in a grid of tiles. Fill
-                // and clip is the same picture with the spill removed.
+                // Fill by default, still: a cover with a letterboxed grey band
+                // around it looks like a mistake in a grid of tiles. `.clipped()`
+                // stays regardless of mode — a no-op when fitting, since a fitted
+                // image is already fully contained in its frame, and load-bearing
+                // when filling, for the reason above.
                 Image(nsImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: contentMode)
                     .clipped()
             } else {
                 Rectangle().fill(.quaternary)

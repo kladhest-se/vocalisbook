@@ -15,11 +15,13 @@ import PlatformShared
 /// and the expand button just resizes the window.
 /// The four sizes `CompactPlayerView`'s content can be, smallest to largest —
 /// see the comment inside `body` for what each one shows and why.
-private enum Tier: Equatable {
-    case artOnly
-    case withProgress
-    case withControls
-    case full
+private enum Tier: Int, Comparable {
+    case artOnly = 0
+    case withProgress = 1
+    case withControls = 2
+    case full = 3
+
+    static func < (lhs: Tier, rhs: Tier) -> Bool { lhs.rawValue < rhs.rawValue }
 
     /// Thresholds worked out from element heights, not guessed a second time.
     ///
@@ -38,6 +40,29 @@ private enum Tier: Equatable {
         case ...240: self = .artOnly
         case ...380: self = .withProgress
         case ...540: self = .withControls
+        default: self = .full
+        }
+    }
+
+    /// The same idea, sideways — and the one this file was missing entirely
+    /// until a narrow-but-tall window exposed it. Every threshold above was
+    /// chosen against *height* alone, so a window dragged narrow while
+    /// staying reasonably tall could compute `withControls` or `full` from
+    /// its height and try to fit a six-button transport row into whatever
+    /// width happened to be left — which is the cover, the scrubber and the
+    /// titles all being cropped or squeezed in the screenshots this was
+    /// reported against. `body` takes the smaller of this and the
+    /// height-based tier, so either dimension being too small is enough to
+    /// drop a level, and both have to agree before a tier is allowed to grow.
+    ///
+    /// Checked in Python again rather than guessed: the transport row's six
+    /// items and five gaps alone need about 316pt including padding, which
+    /// is comfortably under `withControls`'s threshold here.
+    init(width: CGFloat) {
+        switch width {
+        case ...190: self = .artOnly
+        case ...260: self = .withProgress
+        case ...360: self = .withControls
         default: self = .full
         }
     }
@@ -80,13 +105,19 @@ struct CompactPlayerView: View {
                 //   artOnly      the cover alone, filling every point of
                 //                the window there is
                 //
-                // Measured against the height rather than given fixed sizes:
-                // each tier is as large as the space allows and no larger, so
-                // the window can go as small as somebody drags it and every
-                // tier stays legible for as long as there is room for it.
+                // Measured against both dimensions rather than given fixed
+                // sizes, and against the smaller of the two — see
+                // `Tier.init(width:)` for why one alone was not enough. Each
+                // tier is as large as the space allows and no larger, so the
+                // window can go as small as somebody drags it and every tier
+                // stays legible for as long as there is room for it.
                 GeometryReader { geometry in
                 let height = geometry.size.height
-                let tier = Tier(height: height)
+                // The smaller of the two: either dimension being too small
+                // for a tier's content is enough to drop a level, and both
+                // have to agree before growing. See `Tier.init(width:)` for
+                // why this was missing before and what it fixes.
+                let tier = min(Tier(height: height), Tier(width: geometry.size.width))
 
                 if tier == .artOnly {
                     // The full content area, not the full window — `header`
@@ -98,12 +129,18 @@ struct CompactPlayerView: View {
                     // easiest to lose track of, would trade one convenience
                     // for a real one.
                     //
-                    // No padding, no fixed aspect ratio to letterbox against
-                    // a window that is not square — `CoverImage` already
-                    // fills and crops whatever frame it is given, so handing
-                    // it the whole available rect is the entire
-                    // implementation.
-                    CoverImage(thumb: app.nowPlayingThumb)
+                    // No padding — the whole available rect is handed
+                    // straight to `CoverImage`. `contentMode: .fit` rather
+                    // than the default fill: at every other size the cover
+                    // is one square tile among other content, and cropping
+                    // an off-ratio one to fill its frame is the right trade
+                    // there. Here the cover *is* the content, so losing part
+                    // of a tall or wide cover to a crop would be losing the
+                    // one thing this tier exists to show in full — a letterboxed
+                    // band on either side is the honest cost of a window that
+                    // is not the same shape as the artwork, not a defect to
+                    // hide.
+                    CoverImage(thumb: app.nowPlayingThumb, contentMode: .fit)
                         .frame(width: geometry.size.width, height: height)
                         .contentShape(.rect)
                         .onTapGesture { app.togglePlayPauseRespectingOffline() }
