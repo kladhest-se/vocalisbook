@@ -23,11 +23,32 @@ struct RootView: View {
                 // library comes back. Nothing to remember, nothing to get stuck
                 // in.
                 GeometryReader { geometry in
-                    if geometry.size.width < WindowSizer.compactWidth {
-                        CompactPlayerView()
-                    } else {
-                        LibraryView()
+                    Group {
+                        if geometry.size.width < WindowSizer.compactWidth {
+                            CompactPlayerView()
+                        } else {
+                            LibraryView()
+                        }
                     }
+                    // Pinned to the exact measured size, not only given a
+                    // minimum — the same gap as the minimum below, one
+                    // level higher. A `GeometryReader` proposes its
+                    // measured size to its child; it does not force that
+                    // child to actually stay inside the proposal, so
+                    // `CompactPlayerView` was free to settle on whatever
+                    // size its own content wanted rather than shrinking
+                    // with the window past a certain point. The symptom was
+                    // a debug label inside it reporting the exact same
+                    // width and height across screenshots at visibly
+                    // different window sizes — not stale, frozen, because
+                    // the measurement feeding it had genuinely stopped
+                    // moving. The same fix already went one level further
+                    // in, on the `ZStack` `CompactPlayerView` builds its
+                    // own content in; it did not help, because this level
+                    // was never pinned either, and a child three levels
+                    // down being pinned to a parent that is itself still
+                    // free to drift does not constrain anything.
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 // Without this, nothing tells AppKit that shrinking the window
                 // past a certain point is even valid.
