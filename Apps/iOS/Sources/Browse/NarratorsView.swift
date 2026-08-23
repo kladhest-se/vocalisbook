@@ -3,9 +3,9 @@ import Audiobooks
 import PlatformShared
 
 /// The detail screen for one narrator. `NarratorsView` itself does not exist
-/// as a separate screen on iOS: narrators are one of the four modes of
-/// `BrowseView`, reached from the menu on that screen's navigation title
-/// alongside writers, series and genres.
+/// as a separate screen on iOS — see the mode toggle inside `AuthorsView`
+/// for why: a sixth tab here triggers iOS's own unthemed "More" bucket past
+/// five, so narrators are reached from the Authors tab instead.
 struct NarratorBooksView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let narrator: String

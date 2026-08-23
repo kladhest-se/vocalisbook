@@ -24,8 +24,10 @@ opens above it.
 - A collection's order now says so — "Next in the Dune collection" rather than
   claiming to be the series.
 - The library grid stopped at 500 books; the limit is now optional and unset.
-- iOS: Authors, Series and Genres are one Browse tab, switched from a menu on
-  the navigation title. Narrators moved there from inside Authors.
+- iOS: the tab bar is unchanged — Home, Books, Authors, Series and Genres, with
+  narrators behind a switch inside Authors. A single Browse tab using a
+  navigation-title menu was tried and reverted; the menu did not appear on
+  device, leaving no way to reach series or genres at all.
 
 ## 1.0.0
 

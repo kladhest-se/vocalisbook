@@ -269,13 +269,11 @@ if PlatformCapabilities.localStoreIsDurable {
                     //
                     // A value link needs the enclosing stack to register a
                     // destination for that type, and this screen is reached from
-                    // several stacks that register different ones: the series
-                    // and genre screens push books as a bare `String`, the
-                    // writer and narrator screens push a `BookRoute`, and Home
-                    // uses an item binding. So the link matched nothing from
-                    // most of them and the row simply did not respond — which
-                    // is exactly what a tap on a dead `NavigationLink` looks
-                    // like.
+                    // five of them: Genres and Series register `String`, Authors
+                    // and Collections register `BookRoute`, and Home uses an
+                    // item binding. So the link matched nothing from three of
+                    // the five and the row simply did not respond — which is
+                    // exactly what a tap on a dead `NavigationLink` looks like.
                     //
                     // Bound to this view instead, so it works the same way from
                     // wherever the book was opened.
