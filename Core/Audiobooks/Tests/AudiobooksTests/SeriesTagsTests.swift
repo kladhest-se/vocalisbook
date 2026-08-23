@@ -273,11 +273,18 @@ struct SeriesTagsTests {
             }
         }
 
+        // Positions 1 and 2, deliberately, and in different sections.
+        //
+        // Seeding both at #1 would have made the `nextInSeries` assertion below
+        // pass whether or not the walk is scoped — there would be no later book
+        // anywhere to find, so nil proves nothing. With a #2 sitting in the
+        // other section, nil is only correct if the walk refused to leave the
+        // first one.
         let library = LibraryStore(database: db)
-        for (key, section) in [("900", "srv:2"), ("901", "srv:3")] {
+        for (key, section, position) in [("900", "srv:2", 1), ("901", "srv:3", 2)] {
             let book = try JSONDecoder().decode(PlexBook.self, from: Data("""
             {"ratingKey":"\(key)","title":"Book \(key)",
-             "Mood":[{"tag":"Series: Dune"},{"tag":"Sequence: Dune #1"}]}
+             "Mood":[{"tag":"Series: Dune"},{"tag":"Sequence: Dune #\(position)"}]}
             """.utf8))
             let track = try JSONDecoder().decode(PlexTrack.self, from: Data("""
             {"ratingKey":"t\(key)","key":"/library/metadata/t\(key)","title":"Part 1",
@@ -294,7 +301,8 @@ struct SeriesTagsTests {
         #expect(second.map(\.book.ratingKey) == ["901"])
 
         // The next-in-series walk is confined the same way, taking the section
-        // from the book it is asked about rather than from a parameter.
+        // from the book it is asked about rather than from a parameter. Dune #2
+        // exists, in the other section, and must not be offered.
         let next = try library.nextInSeries(after: "900")
         #expect(next == nil)
     }

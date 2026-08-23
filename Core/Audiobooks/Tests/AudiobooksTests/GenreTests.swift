@@ -957,25 +957,31 @@ struct GenreTests {
     /// took the default — so a library past five hundred books showed five
     /// hundred, sorted by title, with the rest simply absent from the end of
     /// the alphabet and nothing saying why.
-    @Test("A nil limit returns every book")
+    ///
+    /// Seeded past that boundary on purpose. A dozen books would have passed
+    /// against the old default too, which would have made this a test of the
+    /// `limit` parameter rather than of the bug — the count has to cross 500
+    /// for the assertion to mean anything.
+    ///
+    /// Through `cacheBookList` rather than `cache(book:tracks:chapters:)`:
+    /// this needs rows, not timelines, and five hundred of the latter is a
+    /// slow test for no extra coverage.
+    @Test("A nil limit returns every book, past the old five-hundred ceiling")
     func nilLimitReturnsEverything() throws {
         let library = try makeStore()
 
-        for index in 0..<12 {
+        let count = 501
+        let books = try (0..<count).map { index -> PlexBook in
             let key = String(format: "%03d", index)
-            let book = try JSONDecoder().decode(PlexBook.self, from: Data("""
+            return try JSONDecoder().decode(PlexBook.self, from: Data("""
             {"ratingKey":"\(key)","title":"Book \(key)","titleSort":"Book \(key)"}
             """.utf8))
-            let track = try JSONDecoder().decode(PlexTrack.self, from: Data("""
-            {"ratingKey":"t\(key)","key":"/library/metadata/t\(key)","title":"Part 1",
-             "index":1,"duration":600000,
-             "Media":[{"Part":[{"id":"p\(key)","key":"/p\(key)","updatedAt":1}]}]}
-            """.utf8))
-            try library.cache(book: book, tracks: [track], chapters: [], sectionID: "srv:2")
         }
+        try library.cacheBookList(books, sectionID: "srv:2")
 
         let all = try library.books(sectionID: "srv:2")
-        #expect(all.count == 12)
+        #expect(all.count == count)
+        #expect(all.last?.ratingKey == "500")
 
         // The limit still works when one is asked for, and still pages.
         let firstFive = try library.books(sectionID: "srv:2", limit: 5)
@@ -986,8 +992,8 @@ struct GenreTests {
 
         // `LIMIT -1` still honours an offset, which is why nil maps to it
         // rather than to the clause being dropped.
-        let afterTen = try library.books(sectionID: "srv:2", limit: nil, offset: 10)
-        #expect(afterTen.map(\.ratingKey) == ["010", "011"])
+        let afterFourNinetyNine = try library.books(sectionID: "srv:2", limit: nil, offset: 499)
+        #expect(afterFourNinetyNine.map(\.ratingKey) == ["499", "500"])
     }
 
     @Test("Two filters combine as an intersection, not either alone")

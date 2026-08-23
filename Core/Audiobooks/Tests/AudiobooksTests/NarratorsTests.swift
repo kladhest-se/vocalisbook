@@ -244,8 +244,16 @@ struct NarratorsTests {
     /// The precedence, where one recording credits a person both ways.
     ///
     /// A provider-backed identity outranks the deterministic name-derived one
-    /// *for that credit*, so both books resolve to the Audible key and group
-    /// together rather than splitting on which kind each recording carried.
+    /// *for that credit*. Two spellings are used deliberately: with the same
+    /// spelling on both books the outcome is one entry either way — grouped by
+    /// the shared Audible key if the precedence is right, and grouped by the
+    /// matching name if it is wrong — so the assertion would hold against the
+    /// bug it exists to catch.
+    ///
+    /// With the spellings differing, only the key can merge them. Pick the
+    /// name-derived identity for the first book and it carries a key the second
+    /// book does not share, the names do not match either, and the screen shows
+    /// two readers where there is one.
     @Test("A provider-backed identity outranks a name-derived one")
     func providerIdentityWins() throws {
         let store = try seedIdentified([
@@ -257,8 +265,8 @@ struct NarratorsTests {
                 ]
             ),
             (
-                key: "2", title: "B Book", styles: ["Scott Brick"],
-                moods: ["Contributor-ID: narrator:audible:B002SQ5DR4 = Scott Brick"]
+                key: "2", title: "B Book", styles: ["Scott B. Brick"],
+                moods: ["Contributor-ID: narrator:audible:B002SQ5DR4 = Scott B. Brick"]
             ),
         ])
 
