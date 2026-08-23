@@ -2,218 +2,30 @@
 
 ## 1.0.1 - Unreleased
 
-Not released. Everything under this heading is in the working tree and has not
-been submitted to Apple. `MARKETING_VERSION` in `Config` already reads 1.0.1, so
-a development build is never mistaken for the one on the Store.
+Not released. `MARKETING_VERSION` in `Config` already reads 1.0.1, so a
+development build is never mistaken for the one on the Store. When this ships,
+the heading becomes `## 1.0.1 - <date>` and a fresh `## 1.0.2 - Unreleased`
+opens above it.
 
-When this ships, the heading becomes `## 1.0.1 - <date>` and a fresh
-`## 1.0.2 - Unreleased` opens above it.
-
-### A library over 500 books showed 500 of them
-
-`books(sectionID:)` had `limit: Int = 500` and all three grids took the default.
-Sorted by title, the missing ones were a contiguous run from somewhere in the
-alphabet to the end, and nothing on screen said so — it reads as books failing to
-sync rather than as a screen declining to show what it already had.
-
-The limit is `Int?` now and defaults to nil, meaning every book. It stays
-available because paging is a reasonable thing for a caller to want later, and
-`offset` is only meaningful beside it; nil maps to SQLite's `LIMIT -1`, which is
-how it spells "no limit" while still honouring an offset.
-
-Search is unchanged and still returns at most fifty matches. That one is a
-product decision about a text field rather than a screen quietly truncating a
-library.
-
-### A series drilled into every library at once
-
-`series(sectionID:)` builds the list of series from one library section.
-`books(inSeries:)` had no section at all and built the books behind each entry
-from every section cached on the device — a second audiobook library, or one
-still cached from a server signed out of. The row said two books and the page
-showed four.
-
-It takes a section now. The next-in-series walk is confined the same way, taking
-the section from the book it is asked about rather than from a caller, since
-"what comes after this one" is a question about one library. Finishing Dune #1
-could otherwise have offered Dune #2 from a server the screen was not looking
-at.
-
-### A collection's order no longer calls itself a series
-
-Both sources of "next" said the same thing on screen — "Next in Dune" —
-regardless of whether the position came from the agent's `Sequence:` tag or from
-the order somebody dragged books into a Plex collection. `NextInSeries.source`
-existed to tell them apart and nothing read it.
-
-A tag now says "Next in Dune" and a collection says "Next in the Dune
-collection". Both are still offered; only one of them claims to know the reading
-order. The client contract asks that collections be treated as user data and
-that a series not be derived from them alone, and the label was the one place a
-person would ever have seen the difference.
-
-### A truncated LibriVox GUID was a shared book identity
-
-`librivox:` alone — the prefix with nothing after it — parsed as the identity
-`spokenmeta:librivox:`, which is portable and strong and which every book with a
-truncated GUID in a library would have shared. Progress, bookmarks and
-completion all key on this, so they would have merged across those books and the
-merge would have synced.
-
-The other three forms are guarded by a length: an ISBN is thirteen characters, a
-local fingerprint sixteen, an ASIN ten. LibriVox ids are any length, and both
-remaining checks pass vacuously on an empty string — `"".first` is not `"0"`,
-and `allSatisfy` on nothing is true. It now requires a non-empty value.
-
-Digit and hex checks tightened to ASCII in the same pass. `isNumber` is also
-true for Arabic-Indic digits and vulgar fractions, and `isHexDigit` for the
-fullwidth forms; the contract's regexes are `[0-9]` and `[0-9a-f]`.
-
-### Every Plex tag was being thrown away
-
-Narrators were empty. So, silently, were genres, co-authors, series tags,
-language, edition, work identity and every contributor — anything VocalisMeta
-writes as a `Genre`, `Mood` or `Style` child on an album.
-
-Plex sends those as `{"id": 1201, "filter": "style=1201", "tag": "Scott Brick"}`.
-The `id` is a number. `PlexBook.Tag` declared it `String?` — it has to be a
-string, because a `Guid` child carries its value there — and the synthesised
-decoder asks `decodeIfPresent(String.self)`, which throws on a number rather
-than returning nil. `plexArray` decodes element by element and skips whatever
-throws, which is the right behaviour for one bad entry in a good list and
-exactly the wrong one here: every entry had a numeric id, so every entry was
-skipped. A fully tagged book decoded to empty lists with no error anywhere.
-
-`Tag` now decodes its id through the same lenient helpers every other field in
-the package uses, so it reads as a string whether Plex sends a number or one.
-
-The `tag` field stays strict, and the asymmetry is the point. `id` is genuinely
-sent two ways — a number on a Genre, Mood or Style child, a string on a `Guid`
-child — while `tag` is always a string, so a numeric one is malformed rather
-than a second dialect. Reading it leniently as well turned `{"tag": 12345}` into
-an author called "12345".
-
-Every fixture in the decoding tests was written as `{"tag": "..."}` with no id
-— a shape Plex never sends — so they all agreed with each other and none of
-them agreed with the server. Four tests added against the real shape, including
-a twelve-narrator book, a narrator with no `Contributor-ID` (Style alone is
-enough to be a narrator; the identity is an addition, never a condition), and a
-`Guid` child, which is why `Tag.id` is a string in the first place.
-
-### The contract has four contributor sources; the client knew three
-
-`metadata-contract-v3.json` lists `audible`, `librivox`, `openlibrary` and
-`name` under `source_identifier_regex`. The client validated the first three and
-rejected everything else, so every `Contributor-ID: narrator:name:...` Mood was
-discarded as malformed — and that is most narrator credits on a real library,
-since a narrator rarely has a provider page of their own. Dune sends twelve of
-them and the client kept none.
-
-`name` is now accepted, as sixteen lowercase hex digits. Spelled out as a
-character set rather than `isHexDigit`, which also accepts uppercase and the
-fullwidth forms — an identifier the contract calls malformed should stay
-malformed.
-
-Checked against the published contract itself rather than from memory of it,
-which is also how the missing source was found.
-
-### Narrators group by identity where there is one
-
-The precedence, in order: a provider-backed narrator identity, then the
-deterministic `name:` one, then the plain `Style` value. The contract draws that
-line itself — a `name:` identifier is documented as a deterministic fallback
-rather than an authoritative person id, so where both exist for one person the
-provider-backed one wins.
-
-`Style` alone is still enough to be a narrator. The identity is an addition to
-one, never a condition for being one, and most narrators on most libraries have
-none.
-
-Identities are resolved across the whole library section rather than per book. A
-narrator credited with an identity on one recording and with a bare `Style`
-value on another is one person either way, and keying the second by name while
-the first is keyed by identity would split them in two — worse than the
-name-only grouping this replaces, not better. The map is name-first for the same
-reason: it can merge two spellings that share a key, and can never split one
-name across two entries.
-
-A narrator's own page follows the same resolution, so the book count on a row
-and the books behind it cannot disagree.
-
-Two different provider-scoped keys are never merged because their display names
-match — the integration document forbids it. Where two recordings credit one
-name with two different keys, neither wins and the name does the grouping, which
-puts both books under one entry without asserting that either catalogue entry is
-the other. The precedence only ever chooses between two keys the agent attached
-to the same credit.
-
-The `name` source is narrator-only, as the integration document states: it is a
-fingerprint of a narrator's normalized display name, and an author either has a
-provider behind them or has no contributor identity at all.
-
-### Books cached by the old decoder ask Plex again
-
-Fixing the decoder changes nothing on a library already synced. A book is only
-re-fetched when its `updatedAt` moves on Plex, and none of these moved — the
-server was always right, the client could not read it. Left alone, the tags
-would arrive only when each book happened to be edited in Plex, which for most
-books is never.
-
-Migration v12 clears `plex_updated_at` on every book, which is what makes that
-comparison disagree, so each book gets one detail fetch. It touches one nullable
-column and leaves every track, download, bookmark and position where it is —
-dropping the tag tables instead would have emptied the browse screens until the
-whole backfill finished rather than only until each book's turn.
-
-Detail fetches stay capped at fifty per sync, so a large library fills in over
-several syncs rather than hanging on one. Each sync leaves it more complete than
-it found it.
-
-### Authors are writers now, and nothing else
-
-The list of authors was built from two sources unioned together: the writers
-the VocalisMeta agent credits, and Plex's own album artist. The second one is
-`parentTitle` — whatever the scanner made of the files' `ALBUMARTIST` tag — and
-in an audiobook library that field is as often the narrator as the writer, or
-both joined with a comma, or two co-writers as one string.
-
-That put narrators on a screen headed Authors, and produced duplicates: a
-library showed "Terry Pratchett" beside "Terry Pratchett, Stephen Baxter",
-because nothing normalises names and the two are different strings. Splitting on
-the comma would not have fixed it — `Last, First` and `Jr.` both contain one.
-
-The album artist is no longer consulted. `authors` and `books(byAuthor:)` read
-`book_author` alone, so the index and the page behind it agree about what an
-author is. The cost is stated rather than hidden: a book the agent has not
-matched carries no `Mood` credit, so it has no writer and appears under nobody.
-A book's own screen still falls back to the album artist for the name under its
-cover, because a blank label is worse than one that is only probably right — but
-an index that claims someone writes books is worse than either.
-
-All three platforms, since the change is in the store.
-
-### One Browse tab in place of three, with the switch on the title
-
-Authors, Series and Genres were three of the five tabs iOS allows, and they were
-the same screen three times: a list of names, each with a cover and a count, and
-a set of books behind it. Narrators made a fourth, hidden behind a segmented
-control inside Authors because a sixth tab would have fallen into iOS's own
-unthemed "More" bucket.
-
-They are one screen now. Tapping the navigation title opens a menu — Writers,
-Narrators, Series, Genres — the pattern Mail uses for mailboxes and Files for
-locations. It costs no vertical space, where the segmented control took a strip
-across the top of every list permanently, and it does not shrink its labels to
-fit the way that control would have at four.
-
-The tab bar is Home, Books and Browse. Books is the full library grid, every
-book at once; Browse is the indexes into it.
-
-Searching clears when the mode changes: a search for "Pratchett" carried into
-Genres filters every genre away and reads as a library with no genres in it.
-
-iPhone and iPad only. The Mac and the television have room for the tabs they
-have and a different problem to solve.
+- Plex tag children were all being discarded — `Tag.id` demanded a string and
+  Plex sends a number — so narrators, genres, co-authors, series, language,
+  edition, work identity and contributors all arrived empty.
+- Migration v12 clears `plex_updated_at` so every book already cached re-fetches
+  its detail once.
+- `name` added as a contributor source; it is the fourth the contract documents
+  and every `narrator:name:` credit was being rejected as malformed.
+- Narrators group by canonical key where every credit agrees on one, preferring
+  a provider-backed identity over the name-derived one.
+- Authors are the metadata agent's credits only; Plex's album artist is no
+  longer unioned in, which is where the duplicate and the narrators came from.
+- `librivox:` with nothing after it parsed as a shared book identity.
+- A series drilled into every cached library at once; `books(inSeries:)` now
+  takes a section, and the next-in-series walk stays in the anchor book's.
+- A collection's order now says so — "Next in the Dune collection" rather than
+  claiming to be the series.
+- The library grid stopped at 500 books; the limit is now optional and unset.
+- iOS: Authors, Series and Genres are one Browse tab, switched from a menu on
+  the navigation title. Narrators moved there from inside Authors.
 
 ## 1.0.0
 

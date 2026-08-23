@@ -213,11 +213,9 @@ Publishable as-is at a URL of your choosing.
   the number in `Config` runs ahead of it during development, which is why this
   step exists at all.
 
-  Named rather than written as `<version>`, deliberately: `layout.sh` reads
+  Named rather than written as `<version>`: `layout.sh` reads
   `MARKETING_VERSION` out of `Config/iOS.xcconfig` and checks that this file
-  says it. A placeholder passes review and fails the gate, and the gate is
-  right — a submission checklist that does not name the version being submitted
-  is a checklist somebody can follow while shipping the wrong one.
+  says it, so a placeholder fails the gate.
 - `make <port>-archive` bumps the build number and passes it to
   `xcodebuild archive` directly — Xcode's own Archive action alone would carry
   the deliberate `1` sentinel instead.
