@@ -8,6 +8,10 @@
   A third-party audiobook player for Plex Media Server — iPhone, iPad, Mac and Apple TV.
 </p>
 
+<p align="center">
+  <a href="https://vocalisbook.kladhest.se">vocalisbook.kladhest.se</a>
+</p>
+
 ---
 
 Plex stores audiobooks in a music library, so Plex's own apps show them as albums
@@ -236,7 +240,7 @@ sequenceDiagram
     participant Cloud as iCloud
     participant TV as Apple TV
 
-    Phone->>Phone: listen; position kept locally
+    Phone->>Phone: listen, position kept locally
     Phone->>PMS: timeline every 10s and on pause
     Note over Phone,PMS: queued locally first, so offline listening is not lost
     Phone->>Cloud: on pause, under the book's own identity
@@ -269,6 +273,12 @@ Feature code branches on `PlatformCapabilities` rather than `#if os(...)`, so a
 screen that is wrong for a platform fails to compile there instead of shipping as
 a dead button.
 
-## Where this lives
+## Links
 
-    git@github.com:kladhest-se/vocalisbook.git
+- [vocalisbook.kladhest.se](https://vocalisbook.kladhest.se) — screenshots, and
+  the privacy policy at [`/?privacy`](https://vocalisbook.kladhest.se/?privacy)
+- [vocalismeta.kladhest.se](https://vocalismeta.kladhest.se/#top) — the metadata
+  agent this reads
+- `git@github.com:kladhest-se/vocalisbook.git` — this repository
+
+The site is one PHP file, in `public-web/`, served from this repository.
