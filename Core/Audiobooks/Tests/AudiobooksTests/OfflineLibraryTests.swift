@@ -36,8 +36,13 @@ struct OfflineLibraryTests {
             ("902", "Not downloaded", "Gaiman"),
         ]
         for entry in books {
+            // Credited as a `Mood` as well as the album artist. `authors` reads
+            // only the former now — the album artist is not a writer — so a
+            // seed with `parentTitle` alone would give this suite an empty
+            // author list and test the offline filter against nothing.
             let book = try JSONDecoder().decode(PlexBook.self, from: Data("""
             {"ratingKey":"\(entry.key)","title":"\(entry.title)","parentTitle":"\(entry.author)",
+             "Mood":[{"tag":"\(entry.author)"}],
              "addedAt":1700000000}
             """.utf8))
             let tracks = try (0..<2).map { index in

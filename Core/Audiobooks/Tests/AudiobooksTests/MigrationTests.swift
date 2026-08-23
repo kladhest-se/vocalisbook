@@ -136,6 +136,25 @@ struct MigrationTests {
         }
     }
 
+    @Test("v11 adds the contributor table and the book's new edition columns")
+    func editionMetadataArrives() throws {
+        let queue = try v1Database()
+
+        let migrator = Schema.migrator()
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let hasContributorTable = try db.tableExists("book_contributor")
+            #expect(hasContributorTable)
+            let columns = try db.columns(in: "book").map(\.name)
+            #expect(columns.contains("work_identity"))
+            #expect(columns.contains("work_published_year"))
+            #expect(columns.contains("production_type"))
+            #expect(columns.contains("rating_source"))
+            #expect(columns.contains("rating_count"))
+        }
+    }
+
     /// v4 drops two tables. Dropping is the one migration that can lose
     /// something, so this is the case worth being sure about: the tables go and
     /// nothing else does.
@@ -206,6 +225,64 @@ struct MigrationTests {
         }
         #expect(applied.last == Schema.currentVersion)
     }
+    // MARK: - v12, the re-fetch
+
+    /// v12 is the one migration here that exists to make the app do *more*
+    /// work rather than to change a shape.
+    ///
+    /// Books cached before the tag decoder was fixed have no narrators, no
+    /// genres and no co-authors, and nothing would ever go and get them: the
+    /// sync only re-fetches a book whose `updatedAt` moved on Plex, and none
+    /// of these moved — the server was always right. Clearing the stamp is
+    /// what makes `booksNeedingFullRefresh` disagree and ask again.
+    @Test("v12 clears the update stamp so every book is fetched again")
+    func v12InvalidatesCachedDetail() throws {
+        let queue = try DatabaseQueue()
+        let migrator = Schema.migrator()
+
+        // Stopped one short, so the book below is written the way a device
+        // that already has a library holds it.
+        try migrator.migrate(queue, upTo: "v11_edition_metadata")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO server (machine_identifier, name, last_connection_was_relay)
+                VALUES ('srv', 'test', 0)
+                """)
+            try db.execute(sql: """
+                INSERT INTO library_section (id, server_id, section_key, title)
+                VALUES ('srv:2', 'srv', '2', 'Audiobooks')
+                """)
+            // `cached_at` is NOT NULL, which a raw insert has to satisfy —
+            // the stores fill it in and this deliberately does not use them,
+            // for the reason the suite's own header gives: seeding through
+            // code that describes the schema as it is now would test nothing.
+            try db.execute(sql: """
+                INSERT INTO book
+                    (rating_key, library_section_id, title, plex_updated_at, cached_at)
+                VALUES ('154912', 'srv:2', 'Dune', 1700000000, 1700000000)
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            // The stamp is gone.
+            let stamp = try Int.fetchOne(
+                db, sql: "SELECT plex_updated_at FROM book WHERE rating_key = '154912'"
+            )
+            #expect(stamp == nil)
+
+            // The book itself is not. This clears one column, and a migration
+            // that took the row with it would lose the position, bookmarks and
+            // downloads hanging off it.
+            let title = try String.fetchOne(
+                db, sql: "SELECT title FROM book WHERE rating_key = '154912'"
+            )
+            #expect(title == "Dune")
+        }
+    }
+
     // MARK: - v9, the backfill
 
     /// A database at v8: books cached, and no identities, which is exactly what

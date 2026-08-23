@@ -95,6 +95,46 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
     /// never say so.
     public let edition: String?
 
+    /// The literary work this recording is an edition of, from `Work-ID:`.
+    ///
+    /// Grouping only — see `WorkIdentity`'s own documentation for why this must
+    /// never be used anywhere progress, bookmarks or completion are keyed.
+    public let workIdentity: WorkIdentity?
+
+    /// Every contributor the agent has matched to a stable source, from one
+    /// `Contributor-ID:` Mood per person.
+    ///
+    /// Not every author or narrator will have one — the agent only emits this
+    /// where it found a match — so this can be shorter than `authors` plus
+    /// `narrators`, or empty, without that being a fault of either the agent or
+    /// this parser.
+    public let contributors: [ContributorIdentity]
+
+    /// The work's first publication year, from `Work-Published:`.
+    ///
+    /// Distinct from `year`, which is this *recording's* release date as Plex's
+    /// own `originallyAvailableAt` reports it — a 2019 audiobook of an 1899
+    /// novel has both, and they mean different things on screen.
+    public let workPublishedYear: Int?
+
+    /// How the recording was produced, from `Production:` — "Full cast",
+    /// "Dramatized", and so on, in whatever vocabulary the agent uses.
+    ///
+    /// Kept as whatever string arrives rather than matched against a fixed
+    /// set, since the agent owns this vocabulary and a client that hardcoded
+    /// it would need a release every time that vocabulary grew. Never inferred
+    /// from narrator count — the contract is explicit that only an explicit
+    /// value should ever be shown.
+    public let productionType: String?
+
+    /// Where a rating came from, from `Rating-Source:` — "Audible", for
+    /// instance. `nil` alongside a `nil` `ratingCount` means no rating exists
+    /// to attribute.
+    public let ratingSource: String?
+
+    /// How many ratings a book's rating is based on, from `Rating-Count:`.
+    public let ratingCount: Int?
+
     public var id: String { ratingKey }
 
     /// The prefix that separates a series from a person in `Mood`.
@@ -106,16 +146,50 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
     private static let sequencePrefix = "Sequence: "
     private static let languagePrefix = "Language: "
     private static let editionPrefix = "Edition: "
+    private static let workIDPrefix = "Work-ID: "
+    private static let contributorIDPrefix = "Contributor-ID: "
+    private static let workPublishedPrefix = "Work-Published: "
+    private static let productionPrefix = "Production: "
+    private static let ratingSourcePrefix = "Rating-Source: "
+    private static let ratingCountPrefix = "Rating-Count: "
 
     /// Every namespace the contract reserves.
     ///
     /// Checked as a set rather than one prefix, because the cost of missing one
     /// is that it appears as a person: a library would list "English" and
     /// "Unabridged" among its authors, which is the sort of thing that looks
-    /// like a scanning fault rather than a parsing one.
+    /// like a scanning fault rather than a parsing one. The v2/v3 namespaces
+    /// belong here for the same reason a v1 one does — an unrecognised
+    /// `Work-Published: 1950` would otherwise read as an author named exactly
+    /// that.
     private static let reservedPrefixes = [
         seriesPrefix, sequencePrefix, languagePrefix, editionPrefix,
+        workIDPrefix, contributorIDPrefix, workPublishedPrefix,
+        productionPrefix, ratingSourcePrefix, ratingCountPrefix,
     ]
+
+    /// From `metadata-contract-v3.json`'s own `value_regex` for
+    /// `Work-Published:`: one to four digits, no leading zero.
+    private static func isValidPublicationYear(_ value: String) -> Bool {
+        guard let first = value.first, first != "0" else { return false }
+        return (1...4).contains(value.count) && value.allSatisfy(\.isNumber)
+    }
+
+    /// The exact five values `metadata-contract-v3.json` allows for
+    /// `Production:`. Anything else — including a value that merely looks
+    /// plausible, like "Probably full cast" — is malformed per the
+    /// contract's own test vectors.
+    private static let allowedProductionTypes: Set<String> = [
+        "Single narrator", "Multi-narrator", "Full cast",
+        "Dramatized", "Community recording",
+    ]
+
+    /// The values `metadata-contract-v3.json` allows for `Rating-Source:`.
+    /// `Ljudboksarkivet` added alongside `Audible` for Swedish-language
+    /// libraries the same way `Language: Swedish` already works — this is
+    /// exactly the "future contract adding a second provider" case the set
+    /// (rather than a single string comparison) existed to make cheap.
+    private static let allowedRatingSources: Set<String> = ["Audible", "Ljudboksarkivet"]
 
     enum CodingKeys: String, CodingKey {
         case ratingKey, key, title, titleSort, summary, year, thumb, art
@@ -128,13 +202,69 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
 
     /// One entry in one of Plex's tag lists.
     ///
-    /// Plex sends `"Genre": [{"tag": "Fantasy"}]` — objects rather than strings,
-    /// with an id and a filter alongside the name on some endpoints.
+    /// Plex sends `"Genre": [{"id": 12345, "filter": "genre=12345", "tag":
+    /// "Fantasy"}]` — objects rather than strings, and the real server always
+    /// sends the id and the filter, not only the tag.
+    ///
+    /// Decoded field by field through the lenient helpers rather than by the
+    /// synthesised conformance, and that is the whole point of this type
+    /// existing rather than a plain struct: **`id` is a JSON number on a
+    /// Genre, Mood or Style child and a string on a `Guid` child.** One type
+    /// serves both, and the synthesised decoder asked `decodeIfPresent(String
+    /// .self)` for it, which does not return nil on a number — it throws.
+    ///
+    /// The throw was invisible. `plexArray` decodes element by element and
+    /// skips what it cannot read, which is exactly right for one malformed
+    /// entry in a good list and exactly wrong here, where *every* entry has a
+    /// numeric id and so *every* entry was skipped. A book came back with an
+    /// empty `narrators`, an empty `genres` and an empty `moods` — no error,
+    /// no warning, just a library where nobody had read anything and the
+    /// agent appeared to have written no tags at all.
+    ///
+    /// Nothing in the test fixtures caught it because every one of them was
+    /// written as `{"tag": "..."}` with no id, which is a shape Plex never
+    /// actually sends. The tests agreed with each other rather than with the
+    /// server.
     private struct Tag: Decodable {
         let tag: String?
 
         /// A `Guid` child holds its value here rather than in `tag`.
         let id: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case tag, id
+        }
+
+        init(from decoder: any Decoder) throws {
+            // Still throws for an element that is not an object at all — a
+            // bare string in the middle of the list is genuinely malformed
+            // and should still be skipped rather than read as an empty tag.
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+
+            // Lenient on `id`, strict on `tag`, and the asymmetry is the
+            // whole point rather than an oversight.
+            //
+            // `id` is the field Plex genuinely sends two ways: a number on a
+            // Genre, Mood or Style child and a string on a `Guid` child. That
+            // is a server telling the truth in two dialects, and reading both
+            // is what this type is for.
+            //
+            // `tag` is always a string. A numeric one is not a dialect, it is
+            // malformed — and reading it leniently turned `{"tag": 12345}`
+            // into an author called "12345", which is worse than dropping it.
+            // `plexString` on both fields is what did that: it was written to
+            // rescue the id and quietly rescued a value nobody wanted rescued.
+            // Caught by `oneMalformedMoodEntryDoesNotLoseTheRest`, which
+            // existed for a different reason entirely and turned out to pin
+            // this down exactly.
+            //
+            // A `nil` tag is not fatal to the element or the list: every
+            // caller reads these through `compactMap(\.tag)`, so this drops
+            // out on its own, which is the same thing the old strict decoder
+            // achieved by throwing.
+            tag = (try? c.decodeIfPresent(String.self, forKey: .tag)) ?? nil
+            id = c.plexString(.id)
+        }
     }
 
     private static let spokenMetaScheme = "com.plexapp.agents.spokenmeta://"
@@ -175,7 +305,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         // an album can carry several — a legacy agent's, a Plex Music one — and
         // taking the first would be a coin toss on which server answered.
         let attribute = c.plexString(.guid)
-        let children = ((try? c.decodeIfPresent([Tag].self, forKey: .Guid)) ?? [])
+        let children = c.plexArray([Tag].self, .Guid)
             .compactMap(\.id)
 
         let candidates = ([attribute] + children).compactMap { $0 }
@@ -184,10 +314,10 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
 
         // Missing entirely on most responses, which is not an error: the list
         // endpoint omits tags and the detail endpoint carries them.
-        let tags = (try? c.decodeIfPresent([Tag].self, forKey: .Genre)) ?? []
+        let tags = c.plexArray([Tag].self, .Genre)
         self.genres = tags.compactMap(\.tag).map(PlexProse.repairingMojibake).filter { !$0.isEmpty }
 
-        let styles = (try? c.decodeIfPresent([Tag].self, forKey: .Style)) ?? []
+        let styles = c.plexArray([Tag].self, .Style)
         self.narrators = styles.compactMap(\.tag).map(PlexProse.repairingMojibake).filter { !$0.isEmpty }
 
         // One list, two meanings, split on the documented prefix. Repaired
@@ -195,7 +325,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         // — are English and ASCII, so the repair leaves them exactly alone,
         // and everything after one is a name that can carry the same
         // corruption as any other field here.
-        let moods = ((try? c.decodeIfPresent([Tag].self, forKey: .Mood)) ?? [])
+        let moods = c.plexArray([Tag].self, .Mood)
             .compactMap(\.tag)
             .map(PlexProse.repairingMojibake)
             .filter { !$0.isEmpty }
@@ -218,6 +348,63 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
             .first { $0.hasPrefix(Self.editionPrefix) }
             .map { String($0.dropFirst(Self.editionPrefix.count)) }
             .flatMap { $0.isEmpty ? nil : $0 }
+
+        // A work identity, kept firmly apart from the recording's own
+        // `BookIdentity` — see that type and `WorkIdentity`'s own
+        // documentation for why. `.first`, matching `language` and `edition`:
+        // a book is an edition of exactly one work.
+        self.workIdentity = moods
+            .first { $0.hasPrefix(Self.workIDPrefix) }
+            .map { String($0.dropFirst(Self.workIDPrefix.count)) }
+            .flatMap { WorkIdentity(mood: $0) }
+
+        // Every contributor, not `.first` — a book can credit several authors
+        // and narrators, each with their own `Contributor-ID:` Mood.
+        // `compactMap` rather than treating a malformed one as fatal: one
+        // contributor the agent could not fully match should not cost the
+        // rest of the book its metadata.
+        self.contributors = moods
+            .filter { $0.hasPrefix(Self.contributorIDPrefix) }
+            .map { String($0.dropFirst(Self.contributorIDPrefix.count)) }
+            .compactMap { ContributorIdentity(mood: $0) }
+
+        // Validated against the contract's own value_regex
+        // (`^[1-9][0-9]{0,3}$`) rather than just parsed: a leading zero or a
+        // fifth digit is not a year the agent's own contract considers
+        // well-formed, even though `Int(...)` would happily parse either.
+        self.workPublishedYear = moods
+            .first { $0.hasPrefix(Self.workPublishedPrefix) }
+            .map { String($0.dropFirst(Self.workPublishedPrefix.count)) }
+            .flatMap { Self.isValidPublicationYear($0) ? Int($0) : nil }
+
+        // Validated against the contract's exact five allowed values
+        // (`metadata-contract-v3.json`) rather than accepted as free text.
+        // An earlier version of this stored whatever string arrived on the
+        // theory that the agent owns this vocabulary — reasonable in
+        // isolation, but the contract's own test vectors reject a value
+        // like "Probably full cast" outright, and a client that displayed
+        // it anyway would be showing something the contract calls
+        // malformed as though it were real data.
+        self.productionType = moods
+            .first { $0.hasPrefix(Self.productionPrefix) }
+            .map { String($0.dropFirst(Self.productionPrefix.count)) }
+            .flatMap { Self.allowedProductionTypes.contains($0) ? $0 : nil }
+
+        // Validated against the contract's allowed values — v3 lists
+        // "Audible" and "Ljudboksarkivet", and both are in the set. If
+        // VocalisMeta ever adds a third rating provider, this set needs
+        // updating alongside
+        // it; this is not a general-purpose free-text field the way
+        // `productionType`'s predecessor was mistakenly treated as one.
+        self.ratingSource = moods
+            .first { $0.hasPrefix(Self.ratingSourcePrefix) }
+            .map { String($0.dropFirst(Self.ratingSourcePrefix.count)) }
+            .flatMap { Self.allowedRatingSources.contains($0) ? $0 : nil }
+
+        self.ratingCount = moods
+            .first { $0.hasPrefix(Self.ratingCountPrefix) }
+            .map { String($0.dropFirst(Self.ratingCountPrefix.count)) }
+            .flatMap { Int($0) }
 
         // Anything left. A raw Mood is a person only after every reserved
         // namespace has been taken out of the list.

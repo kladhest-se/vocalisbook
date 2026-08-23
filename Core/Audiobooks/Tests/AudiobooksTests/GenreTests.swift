@@ -209,6 +209,216 @@ struct GenreTests {
         #expect(credits.series == ["Discworld"])
     }
 
+    @Test("Caching a book stores its work identity, contributors and edition metadata")
+    func storesEditionMetadata() throws {
+        let library = try makeStore()
+
+        let json = """
+        {"ratingKey":"900","title":"The Martian",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL12345W"},
+                 {"tag":"Contributor-ID: author:openlibrary:OL2162289A = Andy Weir"},
+                 {"tag":"Work-Published: 2011"},{"tag":"Production: Full cast"},
+                 {"tag":"Rating-Source: Audible"},{"tag":"Rating-Count: 48217"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+        try library.cacheBookList([book], sectionID: "srv:2")
+
+        let credits = try library.credits(bookRatingKey: "900")
+        #expect(credits.workIdentity == "spokenmeta:work:openlibrary:OL12345W")
+        #expect(credits.workPublishedYear == 2011)
+        #expect(credits.productionType == "Full cast")
+        #expect(credits.ratingSource == "Audible")
+        #expect(credits.ratingCount == 48217)
+        #expect(credits.contributors.map(\.contributorKey)
+                == ["spokenmeta:contributor:author:openlibrary:OL2162289A"])
+        #expect(credits.contributors.first?.displayName == "Andy Weir")
+    }
+
+    /// The acceptance case the whole feature exists for: two editions of one
+    /// work, grouped by that work. Progress staying separate isn't something
+    /// this test needs to exercise dynamically — `otherEditions` is a read
+    /// against `book` and `book.work_identity` alone; it has no path to
+    /// `progress` at all, which is the structural guarantee, not a runtime
+    /// one to prove here.
+    @Test("Two editions sharing a work ID appear together")
+    func otherEditionsGroupByWork() throws {
+        let library = try makeStore()
+
+        let abridgedJSON = """
+        {"ratingKey":"900","title":"The Martian (Abridged)",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL12345W"},{"tag":"Edition: Abridged"}]}
+        """
+        let unabridgedJSON = """
+        {"ratingKey":"901","title":"The Martian (Unabridged)",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL12345W"},{"tag":"Edition: Unabridged"}]}
+        """
+        let unrelatedJSON = """
+        {"ratingKey":"902","title":"Some Other Book",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL99999W"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(abridgedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(unabridgedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(unrelatedJSON.utf8)),
+        ], sectionID: "srv:2")
+
+        let editions = try library.otherEditions(
+            ofWork: "spokenmeta:work:openlibrary:OL12345W", excluding: "900"
+        )
+        #expect(editions.map(\.ratingKey) == ["901"])
+    }
+
+    /// The other half of the acceptance case above: not just that editions
+    /// group by work, but that doing so never touches either one's progress.
+    /// Written directly, with real `SyncStore` writes, rather than left to
+    /// the structural argument that `otherEditions` has no path to
+    /// `progress` — the spec's own acceptance criteria ask for this
+    /// explicitly, so it gets its own proof rather than an inference from a
+    /// different test.
+    @Test("Two editions sharing a work ID keep independent progress")
+    func otherEditionsKeepSeparateProgress() throws {
+        let (library, db) = try makeStoreAndDatabase()
+        let sync = SyncStore(database: db)
+
+        let abridgedJSON = """
+        {"ratingKey":"900","title":"The Martian (Abridged)",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL12345W"}]}
+        """
+        let unabridgedJSON = """
+        {"ratingKey":"901","title":"The Martian (Unabridged)",
+         "Mood":[{"tag":"Work-ID: openlibrary:OL12345W"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(abridgedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(unabridgedJSON.utf8)),
+        ], sectionID: "srv:2")
+
+        try sync.recordPosition(bookRatingKey: "900", absoluteMs: 60_000)
+        try sync.recordPosition(bookRatingKey: "901", absoluteMs: 5_400_000)
+
+        let abridgedProgress = try sync.progress(bookRatingKey: "900")
+        let unabridgedProgress = try sync.progress(bookRatingKey: "901")
+
+        #expect(abridgedProgress?.absoluteMs == 60_000)
+        #expect(unabridgedProgress?.absoluteMs == 5_400_000)
+    }
+
+    /// The acceptance case this whole mechanism exists for: a book's
+    /// `updatedAt` on Plex changing is what should make a sync go re-fetch
+    /// its full detail, since that is the only place Series, Sequence and
+    /// every other Mood-derived field actually arrives.
+    @Test("A book whose updatedAt changed on Plex needs a full refresh")
+    func changedUpdatedAtNeedsRefresh() throws {
+        let (library, _) = try makeStoreAndDatabase()
+        try cacheFullBook(library, ratingKey: "900", updatedAt: 1_000)
+
+        let needing = try library.booksNeedingFullRefresh(
+            among: [("900", Date(timeIntervalSince1970: 2_000))]
+        )
+        #expect(needing == ["900"])
+    }
+
+    @Test("A book whose updatedAt did not change, and already has cached tracks, needs nothing")
+    func unchangedUpdatedAtNeedsNothing() throws {
+        let (library, _) = try makeStoreAndDatabase()
+        try cacheFullBook(library, ratingKey: "900", updatedAt: 1_000)
+
+        let needing = try library.booksNeedingFullRefresh(
+            among: [("900", Date(timeIntervalSince1970: 1_000))]
+        )
+        #expect(needing.isEmpty)
+    }
+
+    @Test("A book never cached at all needs a full refresh")
+    func neverCachedNeedsRefresh() throws {
+        let (library, _) = try makeStoreAndDatabase()
+
+        let needing = try library.booksNeedingFullRefresh(
+            among: [("900", Date(timeIntervalSince1970: 1_000))]
+        )
+        #expect(needing == ["900"])
+    }
+
+    /// The specific bug caught while building this: the list sync's own
+    /// query also asks for GUIDs, so `identity_key` alone cannot tell a
+    /// list-only book apart from a fully-fetched one — both have it. Tracks
+    /// only ever arrive with the full detail, which is why this checks for
+    /// those instead.
+    @Test("A book cached only through the list sync, with no tracks, needs a full refresh")
+    func listOnlyBookNeedsRefreshEvenWithSameUpdatedAt() throws {
+        let (library, _) = try makeStoreAndDatabase()
+        let json = """
+        {"ratingKey":"900","title":"A Book","updatedAt":1000}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+        try library.cacheBookList([book], sectionID: "srv:2")
+
+        // Same updatedAt as what was just cached — a naive check would call
+        // this unchanged. It still needs a refresh, because it never had
+        // tracks in the first place.
+        let needing = try library.booksNeedingFullRefresh(
+            among: [("900", Date(timeIntervalSince1970: 1_000))]
+        )
+        #expect(needing == ["900"])
+    }
+
+    private func cacheFullBook(_ library: LibraryStore, ratingKey: String, updatedAt: Int) throws {
+        let bookJSON = """
+        {"ratingKey":"\(ratingKey)","title":"A Book","updatedAt":\(updatedAt)}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(bookJSON.utf8))
+        let trackJSON = """
+        {"ratingKey":"t\(ratingKey)","key":"/library/metadata/t\(ratingKey)","title":"Part 1",
+         "index":1,"duration":600000,
+         "Media":[{"Part":[{"id":"p\(ratingKey)","key":"/p\(ratingKey)","size":1}]}]}
+        """
+        let track = try JSONDecoder().decode(PlexTrack.self, from: Data(trackJSON.utf8))
+        try library.cache(book: book, tracks: [track], chapters: [], sectionID: "srv:2")
+    }
+
+    @Test("A book with no Work-ID has no other editions")
+    func noWorkIdentityMeansNoGrouping() throws {
+        let library = try makeStore()
+        let json = """
+        {"ratingKey":"900","title":"A Book"}
+        """
+        try library.cacheBookList(
+            [try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))], sectionID: "srv:2"
+        )
+
+        let credits = try library.credits(bookRatingKey: "900")
+        #expect(credits.workIdentity == nil)
+    }
+
+    @Test("Every book crediting one contributor is found by their stable key")
+    func booksByContributor() throws {
+        let library = try makeStore()
+
+        let firstJSON = """
+        {"ratingKey":"900","title":"Project Hail Mary",
+         "Mood":[{"tag":"Contributor-ID: author:openlibrary:OL2162289A = Andy Weir"}]}
+        """
+        let secondJSON = """
+        {"ratingKey":"901","title":"The Martian",
+         "Mood":[{"tag":"Contributor-ID: author:openlibrary:OL2162289A = Andy Weir"}]}
+        """
+        let otherAuthorJSON = """
+        {"ratingKey":"902","title":"A Different Book",
+         "Mood":[{"tag":"Contributor-ID: author:openlibrary:OL999A = Someone Else"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(firstJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(secondJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(otherAuthorJSON.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(
+            byContributor: "spokenmeta:contributor:author:openlibrary:OL2162289A",
+            sectionID: "srv:2"
+        )
+        #expect(Set(books.map(\.ratingKey)) == Set(["900", "901"]))
+    }
+
     /// The same rule genres already follow: an empty list means the endpoint was
     /// not asked, not that the book has none. Emptying the table on every
     /// library refresh would lose what the detail endpoint had supplied.
@@ -329,7 +539,7 @@ struct GenreTests {
         let library = try makeStore()
         try cacheSeriesBooks(library)
 
-        let entries = try library.books(inSeries: "Discworld")
+        let entries = try library.books(inSeries: "Discworld", sectionID: "srv:2")
         #expect(entries.map(\.book.ratingKey) == ["2", "3", "1", "4"])
     }
 
@@ -340,7 +550,7 @@ struct GenreTests {
         let library = try makeStore()
         try cacheSeriesBooks(library)
 
-        let entries = try library.books(inSeries: "Discworld")
+        let entries = try library.books(inSeries: "Discworld", sectionID: "srv:2")
         #expect(entries.last?.book.ratingKey == "4")
         #expect(entries.last?.position == "Special")
     }
@@ -479,6 +689,359 @@ struct GenreTests {
 
         let stored = try library.book(ratingKey: "901")
         #expect(stored?.author == "A Tagger's Guess")
+    }
+
+    @Test("Recently updated orders books by plex_updated_at, most recent first")
+    func recentlyUpdatedOrdering() throws {
+        let library = try makeStore()
+
+        let older = """
+        {"ratingKey":"900","title":"Older","updatedAt":1000}
+        """
+        let newer = """
+        {"ratingKey":"901","title":"Newer","updatedAt":2000}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(older.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(newer.utf8)),
+        ], sectionID: "srv:2")
+
+        let updated = try library.recentlyUpdated(sectionID: "srv:2")
+        #expect(updated.map(\.ratingKey) == ["901", "900"])
+    }
+
+    @Test("Unabridged shelf includes only books explicitly tagged so")
+    func unabridgedShelf() throws {
+        let library = try makeStore()
+
+        let unabridgedJSON = """
+        {"ratingKey":"900","title":"Confirmed Unabridged",
+         "Mood":[{"tag":"Edition: Unabridged"}]}
+        """
+        let abridgedJSON = """
+        {"ratingKey":"901","title":"Confirmed Abridged",
+         "Mood":[{"tag":"Edition: Abridged"}]}
+        """
+        // Absence is not evidence of unabridged — the contract is explicit
+        // that most unabridged recordings never say so.
+        let untaggedJSON = """
+        {"ratingKey":"902","title":"No Edition Tag"}
+        """
+
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(unabridgedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(abridgedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(untaggedJSON.utf8)),
+        ], sectionID: "srv:2")
+
+        let shelf = try library.unabridged(sectionID: "srv:2")
+        #expect(shelf.map(\.ratingKey) == ["900"])
+    }
+
+    @Test("Full cast or dramatized shelf excludes single- and multi-narrator productions")
+    func fullCastOrDramatizedShelf() throws {
+        let library = try makeStore()
+
+        let fullCastJSON = """
+        {"ratingKey":"900","title":"A Full Cast Book",
+         "Mood":[{"tag":"Production: Full cast"}]}
+        """
+        let dramatizedJSON = """
+        {"ratingKey":"901","title":"A Dramatized Book",
+         "Mood":[{"tag":"Production: Dramatized"}]}
+        """
+        let singleNarratorJSON = """
+        {"ratingKey":"902","title":"An Ordinary Book",
+         "Mood":[{"tag":"Production: Single narrator"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(fullCastJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(dramatizedJSON.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(singleNarratorJSON.utf8)),
+        ], sectionID: "srv:2")
+
+        let shelf = try library.fullCastOrDramatized(sectionID: "srv:2")
+        #expect(Set(shelf.map(\.ratingKey)) == ["900", "901"])
+    }
+
+    @Test("Short listens shelf includes only books under the threshold, shortest first")
+    func shortListensShelf() throws {
+        let library = try makeStore()
+
+        try cacheBookWithDuration(library, ratingKey: "900", title: "A Short One", ms: 1 * 3_600_000)
+        try cacheBookWithDuration(library, ratingKey: "901", title: "A Shorter One", ms: 30 * 60_000)
+        try cacheBookWithDuration(library, ratingKey: "902", title: "Too Long For This Shelf", ms: 5 * 3_600_000)
+
+        let shelf = try library.shortListens(sectionID: "srv:2")
+        #expect(shelf.map(\.ratingKey) == ["901", "900"])
+    }
+
+    @Test("Long listens shelf includes only books over the threshold, longest first")
+    func longListensShelf() throws {
+        let library = try makeStore()
+
+        try cacheBookWithDuration(library, ratingKey: "900", title: "A Long One", ms: 22 * 3_600_000)
+        try cacheBookWithDuration(library, ratingKey: "901", title: "A Longer One", ms: 30 * 3_600_000)
+        try cacheBookWithDuration(library, ratingKey: "902", title: "Too Short For This Shelf", ms: 5 * 3_600_000)
+
+        let shelf = try library.longListens(sectionID: "srv:2")
+        #expect(shelf.map(\.ratingKey) == ["901", "900"])
+    }
+
+    /// A single track whose duration becomes the book's own `duration_ms`,
+    /// via `BookTimeline` — the column is the sum of real track durations,
+    /// not a raw Plex field, so a duration-based test needs real tracks
+    /// rather than a list-only cache.
+    private func cacheBookWithDuration(
+        _ library: LibraryStore, ratingKey: String, title: String, ms: Int
+    ) throws {
+        let bookJSON = """
+        {"ratingKey":"\(ratingKey)","title":"\(title)"}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(bookJSON.utf8))
+        let trackJSON = """
+        {"ratingKey":"t\(ratingKey)","key":"/library/metadata/t\(ratingKey)","title":"Part 1",
+         "index":1,"duration":\(ms),
+         "Media":[{"Part":[{"id":"p\(ratingKey)","key":"/p\(ratingKey)","size":1}]}]}
+        """
+        let track = try JSONDecoder().decode(PlexTrack.self, from: Data(trackJSON.utf8))
+        try library.cache(book: book, tracks: [track], chapters: [], sectionID: "srv:2")
+    }
+
+    @Test("An unfiltered call behaves exactly as it did before filters existed")
+    func filterDefaultsToUnfiltered() throws {
+        let library = try makeStore()
+        let jsonA = """
+        {"ratingKey":"900","title":"B Book"}
+        """
+        let jsonB = """
+        {"ratingKey":"901","title":"A Book"}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(jsonA.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(jsonB.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(sectionID: "srv:2")
+        #expect(books.map(\.ratingKey) == ["901", "900"])
+    }
+
+    @Test("Language filter narrows to an exact match")
+    func languageFilter() throws {
+        let library = try makeStore()
+        let swedish = """
+        {"ratingKey":"900","title":"En Svensk Bok","Mood":[{"tag":"Language: Swedish"}]}
+        """
+        let english = """
+        {"ratingKey":"901","title":"An English Book","Mood":[{"tag":"Language: English"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(swedish.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(english.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(
+            sectionID: "srv:2", filter: BookFilter(language: "Swedish")
+        )
+        #expect(books.map(\.ratingKey) == ["900"])
+    }
+
+    @Test("Abridged filter excludes unabridged and untagged books")
+    func abridgedFilter() throws {
+        let library = try makeStore()
+        let abridged = """
+        {"ratingKey":"900","title":"Abridged","Mood":[{"tag":"Edition: Abridged"}]}
+        """
+        let unabridged = """
+        {"ratingKey":"901","title":"Unabridged","Mood":[{"tag":"Edition: Unabridged"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(abridged.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(unabridged.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(sectionID: "srv:2", filter: BookFilter(abridgedOnly: true))
+        #expect(books.map(\.ratingKey) == ["900"])
+    }
+
+    @Test("Full cast/dramatized filter excludes ordinary productions")
+    func productionFilter() throws {
+        let library = try makeStore()
+        let fullCast = """
+        {"ratingKey":"900","title":"Full Cast","Mood":[{"tag":"Production: Full cast"}]}
+        """
+        let ordinary = """
+        {"ratingKey":"901","title":"Ordinary","Mood":[{"tag":"Production: Single narrator"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(fullCast.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(ordinary.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(
+            sectionID: "srv:2", filter: BookFilter(fullCastOrDramatizedOnly: true)
+        )
+        #expect(books.map(\.ratingKey) == ["900"])
+    }
+
+    @Test("Finished and unfinished filters partition correctly, including a book with no progress row at all")
+    func finishedAndUnfinishedFilters() throws {
+        let (library, db) = try makeStoreAndDatabase()
+        let sync = SyncStore(database: db)
+
+        for key in ["900", "901", "902"] {
+            let json = """
+            {"ratingKey":"\(key)","title":"Book \(key)"}
+            """
+            try library.cacheBookList(
+                [try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))], sectionID: "srv:2"
+            )
+        }
+        try sync.recordPosition(bookRatingKey: "900", absoluteMs: 1000)
+        try sync.markFinished(bookRatingKey: "900")
+        try sync.recordPosition(bookRatingKey: "901", absoluteMs: 1000)
+        // 902 never gets a progress row at all — the case a naive "finished_at
+        // IS NULL" check would misclassify differently from a book that has a
+        // progress row but an unfinished one.
+
+        let finished = try library.books(sectionID: "srv:2", filter: BookFilter(finishedOnly: true))
+        #expect(finished.map(\.ratingKey) == ["900"])
+
+        let unfinished = try library.books(sectionID: "srv:2", filter: BookFilter(unfinishedOnly: true))
+        #expect(Set(unfinished.map(\.ratingKey)) == ["901", "902"])
+    }
+
+    @Test("Release year sort puts newest first and books with no year last")
+    func releaseYearSort() throws {
+        let library = try makeStore()
+        let older = """
+        {"ratingKey":"900","title":"Older","year":2010}
+        """
+        let newer = """
+        {"ratingKey":"901","title":"Newer","year":2020}
+        """
+        let noYear = """
+        {"ratingKey":"902","title":"No Year"}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(older.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(newer.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(noYear.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(sectionID: "srv:2", sort: .releaseYear)
+        #expect(books.map(\.ratingKey) == ["901", "900", "902"])
+    }
+
+    @Test("Publication year sort reads work_published_year, distinct from release year")
+    func publicationYearSort() throws {
+        let library = try makeStore()
+        let older = """
+        {"ratingKey":"900","title":"Older Work","Mood":[{"tag":"Work-Published: 1950"}]}
+        """
+        let newer = """
+        {"ratingKey":"901","title":"Newer Work","Mood":[{"tag":"Work-Published: 2011"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(older.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(newer.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(sectionID: "srv:2", sort: .publicationYear)
+        #expect(books.map(\.ratingKey) == ["901", "900"])
+    }
+
+    /// The grid asks for the whole library, and used not to be able to.
+    ///
+    /// `limit` defaulted to 500 with no way to opt out, and all three grids
+    /// took the default — so a library past five hundred books showed five
+    /// hundred, sorted by title, with the rest simply absent from the end of
+    /// the alphabet and nothing saying why.
+    @Test("A nil limit returns every book")
+    func nilLimitReturnsEverything() throws {
+        let library = try makeStore()
+
+        for index in 0..<12 {
+            let key = String(format: "%03d", index)
+            let book = try JSONDecoder().decode(PlexBook.self, from: Data("""
+            {"ratingKey":"\(key)","title":"Book \(key)","titleSort":"Book \(key)"}
+            """.utf8))
+            let track = try JSONDecoder().decode(PlexTrack.self, from: Data("""
+            {"ratingKey":"t\(key)","key":"/library/metadata/t\(key)","title":"Part 1",
+             "index":1,"duration":600000,
+             "Media":[{"Part":[{"id":"p\(key)","key":"/p\(key)","updatedAt":1}]}]}
+            """.utf8))
+            try library.cache(book: book, tracks: [track], chapters: [], sectionID: "srv:2")
+        }
+
+        let all = try library.books(sectionID: "srv:2")
+        #expect(all.count == 12)
+
+        // The limit still works when one is asked for, and still pages.
+        let firstFive = try library.books(sectionID: "srv:2", limit: 5)
+        #expect(firstFive.map(\.ratingKey) == ["000", "001", "002", "003", "004"])
+
+        let nextFive = try library.books(sectionID: "srv:2", limit: 5, offset: 5)
+        #expect(nextFive.map(\.ratingKey) == ["005", "006", "007", "008", "009"])
+
+        // `LIMIT -1` still honours an offset, which is why nil maps to it
+        // rather than to the clause being dropped.
+        let afterTen = try library.books(sectionID: "srv:2", limit: nil, offset: 10)
+        #expect(afterTen.map(\.ratingKey) == ["010", "011"])
+    }
+
+    @Test("Two filters combine as an intersection, not either alone")
+    func combinedFilters() throws {
+        let library = try makeStore()
+        let matches = """
+        {"ratingKey":"900","title":"Matches Both",
+         "Mood":[{"tag":"Language: Swedish"},{"tag":"Edition: Abridged"}]}
+        """
+        let wrongLanguage = """
+        {"ratingKey":"901","title":"Wrong Language",
+         "Mood":[{"tag":"Language: English"},{"tag":"Edition: Abridged"}]}
+        """
+        let wrongEdition = """
+        {"ratingKey":"902","title":"Wrong Edition",
+         "Mood":[{"tag":"Language: Swedish"},{"tag":"Edition: Unabridged"}]}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(matches.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(wrongLanguage.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(wrongEdition.utf8)),
+        ], sectionID: "srv:2")
+
+        let books = try library.books(
+            sectionID: "srv:2",
+            filter: BookFilter(language: "Swedish", abridgedOnly: true)
+        )
+        #expect(books.map(\.ratingKey) == ["900"])
+    }
+
+    @Test("distinctLanguages returns only what the library actually has, deduplicated and sorted")
+    func distinctLanguages() throws {
+        let library = try makeStore()
+        let a = """
+        {"ratingKey":"900","title":"A","Mood":[{"tag":"Language: Swedish"}]}
+        """
+        let b = """
+        {"ratingKey":"901","title":"B","Mood":[{"tag":"Language: English"}]}
+        """
+        let c = """
+        {"ratingKey":"902","title":"C","Mood":[{"tag":"Language: Swedish"}]}
+        """
+        let d = """
+        {"ratingKey":"903","title":"D"}
+        """
+        try library.cacheBookList([
+            try JSONDecoder().decode(PlexBook.self, from: Data(a.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(b.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(c.utf8)),
+            try JSONDecoder().decode(PlexBook.self, from: Data(d.utf8)),
+        ], sectionID: "srv:2")
+
+        let languages = try library.distinctLanguages(sectionID: "srv:2")
+        #expect(languages == ["English", "Swedish"])
     }
 
 }

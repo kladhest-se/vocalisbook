@@ -100,6 +100,7 @@ final class AppModel {
             // bookmarks and session history.
             database = try EphemeralStore.open()
             library = LibraryStore(database: database)
+            refreshFinishedKeys()
             sync = SyncStore(database: database)
             sessions = SessionStore(database: database)
 
@@ -896,7 +897,21 @@ final class AppModel {
     /// A named method also says what happened. `libraryRevision += 1` at a call
     /// site says how the signal is implemented and leaves the reader to infer
     /// why.
-    func libraryChanged() { libraryRevision += 1 }
+    func libraryChanged() {
+        libraryRevision += 1
+        refreshFinishedKeys()
+    }
+
+    /// Refreshed the same general way as `libraryChanged` itself is
+    /// triggered: rather than hunting down every specific place finished
+    /// state can change, this rides the same established signal. No
+    /// `downloadedKeys` counterpart here — see the note beside where
+    /// `downloads` would be on this platform's `AppModel` for why.
+    private(set) var finishedKeys: Set<String> = []
+
+    func refreshFinishedKeys() {
+        finishedKeys = (try? library?.finishedBookKeys()) ?? []
+    }
 
     /// What the app is busy doing, in a sentence somebody can read.
     ///

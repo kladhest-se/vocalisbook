@@ -36,6 +36,27 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
     /// still how Plex is addressed, and this is what travels between servers.
     public var identityKey: String?
 
+    /// The literary work this recording is an edition of, from `Work-ID:`.
+    ///
+    /// Grouping only — see `WorkIdentity`'s own documentation in PlexKit for
+    /// why this must never be read anywhere progress, bookmarks or completion
+    /// are keyed.
+    public var workIdentity: String?
+
+    /// The work's first publication year, from `Work-Published:`. Distinct
+    /// from `year`, which is this recording's own release date.
+    public var workPublishedYear: Int?
+
+    /// How the recording was produced, from `Production:` — whatever
+    /// vocabulary the agent uses, never inferred from narrator count.
+    public var productionType: String?
+
+    /// Where a rating came from, from `Rating-Source:`.
+    public var ratingSource: String?
+
+    /// How many ratings a book's rating is based on, from `Rating-Count:`.
+    public var ratingCount: Int?
+
     /// Defaulted, so the several places that build one of these keep compiling.
     /// A book cached before v7 has none of the three, which is what nil means.
     public init(
@@ -56,7 +77,12 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         cachedAt: Date = Date(),
         language: String? = nil,
         edition: String? = nil,
-        identityKey: String? = nil
+        identityKey: String? = nil,
+        workIdentity: String? = nil,
+        workPublishedYear: Int? = nil,
+        productionType: String? = nil,
+        ratingSource: String? = nil,
+        ratingCount: Int? = nil
     ) {
         self.ratingKey = ratingKey
         self.librarySectionID = librarySectionID
@@ -76,6 +102,11 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         self.language = language
         self.edition = edition
         self.identityKey = identityKey
+        self.workIdentity = workIdentity
+        self.workPublishedYear = workPublishedYear
+        self.productionType = productionType
+        self.ratingSource = ratingSource
+        self.ratingCount = ratingCount
     }
 
     enum CodingKeys: String, CodingKey {
@@ -92,6 +123,34 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         case plexUpdatedAt = "plex_updated_at"
         case cachedAt = "cached_at"
         case identityKey = "identity_key"
+        case workIdentity = "work_identity"
+        case workPublishedYear = "work_published_year"
+        case productionType = "production_type"
+        case ratingSource = "rating_source"
+        case ratingCount = "rating_count"
+    }
+}
+
+public struct ContributorRecord: Codable, FetchableRecord, PersistableRecord, Sendable, Hashable {
+    public static let databaseTableName = "book_contributor"
+
+    public var bookRatingKey: String
+    public var contributorKey: String
+    public var role: String
+    public var displayName: String
+
+    public init(bookRatingKey: String, contributorKey: String, role: String, displayName: String) {
+        self.bookRatingKey = bookRatingKey
+        self.contributorKey = contributorKey
+        self.role = role
+        self.displayName = displayName
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case bookRatingKey = "book_rating_key"
+        case contributorKey = "contributor_key"
+        case role
+        case displayName = "display_name"
     }
 }
 

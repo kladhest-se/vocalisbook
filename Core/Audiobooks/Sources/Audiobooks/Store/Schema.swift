@@ -29,11 +29,13 @@ public enum Schema {
         registerV8(&migrator)
         registerV9(&migrator)
         registerV10(&migrator)
+        registerV11(&migrator)
+        registerV12(&migrator)
         return migrator
     }
 
     /// Current version, for logging and for the tvOS cache-validity check.
-    public static let currentVersion = "v10_session_library_scope"
+    public static let currentVersion = "v12_refetch_tag_metadata"
 
     private static func registerV1(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v1_initial") { db in
@@ -520,6 +522,98 @@ public enum Schema {
                 on: "listening_session",
                 columns: ["library_section_id", "started_at"]
             )
+        }
+    }
+
+    /// Work identity, contributor identities, and the rest of what the
+    /// agent's v2/v3 contract adds: publication year, production type,
+    /// rating source and count.
+    ///
+    /// `work_identity`, `work_published_year`, `production_type`,
+    /// `rating_source` and `rating_count` are columns rather than tables, for
+    /// the same reason `language` and `edition` are: a book has at most one of
+    /// each.
+    ///
+    /// `book_contributor` is a table, for the same reason `book_author` and
+    /// `book_narrator` are: a book credits any number of contributors, and
+    /// "everything credited to this contributor" — the query a contributor
+    /// page needs — groups by key rather than by book. Keyed on the stable
+    /// `spokenmeta:contributor:...` string rather than the display name for
+    /// exactly the reason that string exists: two people can share a name,
+    /// and one person's name can be spelled two ways across editions.
+    ///
+    /// All nullable, and nothing backfills them — the agent did not emit any
+    /// of this before now, so there is nothing to backfill from. A book gets
+    /// its edition metadata the next time it is cached, the same way
+    /// `identity_key` arrived in v7.
+    private static func registerV11(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v11_edition_metadata") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "work_identity", .text)
+                t.add(column: "work_published_year", .integer)
+                t.add(column: "production_type", .text)
+                t.add(column: "rating_source", .text)
+                t.add(column: "rating_count", .integer)
+            }
+
+            // "Other editions of this work" is the query this exists for.
+            try db.create(index: "book_by_work_identity", on: "book", columns: ["work_identity"])
+
+            try db.create(table: "book_contributor") { t in
+                t.column("book_rating_key", .text).notNull()
+                    .references("book", column: "rating_key", onDelete: .cascade)
+                t.column("contributor_key", .text).notNull()
+                t.column("role", .text).notNull()
+                t.column("display_name", .text).notNull()
+                t.primaryKey(["book_rating_key", "contributor_key"])
+            }
+
+            // "Everything credited to this contributor" is the query a
+            // contributor page needs — the same shape as
+            // `book_author_by_name`, keyed on the stable identity instead of
+            // the display name it is deliberately kept separate from.
+            try db.create(
+                index: "book_contributor_by_key",
+                on: "book_contributor",
+                columns: ["contributor_key"]
+            )
+        }
+    }
+
+    /// Every book asks for its full detail again, once.
+    ///
+    /// Not a schema change — nothing is added, dropped or moved. This exists
+    /// because the rows themselves are wrong in a way no column can express:
+    /// they were written by a client that could not read Plex's tag children
+    /// at all. `PlexBook.Tag` demanded a string `id`, Plex sends a number on
+    /// Genre, Mood and Style, and every one of those tags was silently
+    /// dropped on the floor before it reached the store. Narrators, genres,
+    /// co-authors, series, language, edition, work identity and contributors
+    /// all arrive that way, so all of them are missing from any book cached
+    /// before this.
+    ///
+    /// The decoder is fixed, and a fixed decoder alone changes nothing for a
+    /// library already synced: `booksNeedingFullRefresh` re-fetches a book
+    /// whose `updatedAt` moved on the server, and none of these did — the
+    /// server was always right, the client was not reading it. Left alone,
+    /// the cache would stay empty until each book happened to be edited on
+    /// Plex, which for most books is never.
+    ///
+    /// Clearing `plex_updated_at` is what makes the comparison disagree, so
+    /// every book is flagged and gets one detail fetch. Deliberately the
+    /// gentlest lever available: it touches one nullable column, keeps every
+    /// track row, download, bookmark and position exactly where it is, and
+    /// costs one wrong-way comparison per book until that book is re-fetched.
+    /// Dropping the tag tables instead would have emptied the browse screens
+    /// until the backfill finished rather than only until each book's turn.
+    ///
+    /// It is not one sync's worth of work. `LibrarySync` caps detail fetches
+    /// at fifty per sync on purpose, so a library of six hundred books catches
+    /// up over a dozen syncs rather than hanging on one. Each of those syncs
+    /// leaves the library more complete than it found it.
+    private static func registerV12(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v12_refetch_tag_metadata") { db in
+            try db.execute(sql: "UPDATE book SET plex_updated_at = NULL")
         }
     }
 }

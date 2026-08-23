@@ -162,6 +162,32 @@ public struct LibraryStore: Sendable {
         }
     }
 
+    /// Same shape as `replaceSequences`: an empty list usually means "not
+    /// asked" rather than "none credited", so nothing is deleted unless there
+    /// is something to replace it with.
+    private static func replaceContributors(
+        _ db: Database,
+        bookRatingKey: String,
+        values: [ContributorIdentity]
+    ) throws {
+        guard !values.isEmpty else { return }
+
+        try db.execute(
+            sql: "DELETE FROM book_contributor WHERE book_rating_key = ?",
+            arguments: [bookRatingKey]
+        )
+        for contributor in values {
+            try db.execute(
+                sql: """
+                    INSERT OR REPLACE INTO book_contributor
+                        (book_rating_key, contributor_key, role, display_name)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                arguments: [bookRatingKey, contributor.key, contributor.role, contributor.displayName]
+            )
+        }
+    }
+
     /// Replaces one book's rows in one tag table.
     ///
     /// Only when the response carried tags. The list endpoint omits them and the
@@ -226,7 +252,12 @@ public struct LibraryStore: Sendable {
                 cachedAt: now,
                 language: book.language,
                 edition: book.edition,
-                identityKey: Self.identityKey(for: book, sectionID: sectionID)
+                identityKey: Self.identityKey(for: book, sectionID: sectionID),
+                workIdentity: book.workIdentity?.key,
+                workPublishedYear: book.workPublishedYear,
+                productionType: book.productionType,
+                ratingSource: book.ratingSource,
+                ratingCount: book.ratingCount
             )
             try record.save(db)
 
@@ -250,6 +281,7 @@ public struct LibraryStore: Sendable {
             try Self.replaceTags(db, table: "book_series",
                                  bookRatingKey: book.ratingKey, values: book.series)
             try Self.replaceSequences(db, bookRatingKey: book.ratingKey, values: book.sequences)
+            try Self.replaceContributors(db, bookRatingKey: book.ratingKey, values: book.contributors)
             try Self.claimHeldProgress(
                 db,
                 bookRatingKey: book.ratingKey,
@@ -359,7 +391,12 @@ public struct LibraryStore: Sendable {
                     cachedAt: now,
                     language: book.language,
                     edition: book.edition,
-                    identityKey: Self.identityKey(for: book, sectionID: sectionID)
+                    identityKey: Self.identityKey(for: book, sectionID: sectionID),
+                    workIdentity: book.workIdentity?.key,
+                    workPublishedYear: book.workPublishedYear,
+                    productionType: book.productionType,
+                    ratingSource: book.ratingSource,
+                    ratingCount: book.ratingCount
                 )
                 try record.save(db)
 
@@ -382,6 +419,7 @@ public struct LibraryStore: Sendable {
                 try Self.replaceTags(db, table: "book_series",
                                      bookRatingKey: book.ratingKey, values: book.series)
                 try Self.replaceSequences(db, bookRatingKey: book.ratingKey, values: book.sequences)
+                try Self.replaceContributors(db, bookRatingKey: book.ratingKey, values: book.contributors)
                 try Self.claimHeldProgress(
                     db,
                     bookRatingKey: book.ratingKey,
@@ -452,20 +490,114 @@ public struct LibraryStore: Sendable {
         }
     }
 
+    /// Same shape as `downloadedBookKeys` and for the same reason: a grid
+    /// draws hundreds of covers, and a badge on every one of them cannot
+    /// afford a `progress` lookup per tile.
+    public func finishedBookKeys() throws -> Set<String> {
+        try database.writer.read { db in
+            let keys = try String.fetchAll(db, sql: """
+                SELECT book_rating_key FROM progress WHERE finished_at IS NOT NULL
+                """)
+            return Set(keys)
+        }
+    }
 
+
+    /// `limit: nil` means every book, which is what the library grid asks for.
+    ///
+    /// It used to be `500` with no way to say otherwise, and all three grids
+    /// took the default. A library of more than five hundred audiobooks
+    /// therefore showed five hundred of them — sorted by title, so the missing
+    /// ones were a contiguous run from somewhere in the alphabet to the end,
+    /// and nothing said so. It reads as books failing to sync rather than a
+    /// screen declining to show what it already has.
+    ///
+    /// The limit stays available because paging is a real thing a caller might
+    /// want later, and `offset` is only meaningful beside it. Nil maps to
+    /// SQLite's own `LIMIT -1`, which is how it spells "no limit" while still
+    /// honouring `OFFSET`.
     public func books(
         sectionID: String,
-        limit: Int = 500,
+        limit: Int? = nil,
         offset: Int = 0,
-        downloadedOnly: Bool = false
+        downloadedOnly: Bool = false,
+        filter: BookFilter = BookFilter(),
+        sort: BookSort = .title
     ) throws -> [BookRecord] {
         try database.writer.read { db in
-            try BookRecord
-                .filter(Column("library_section_id") == sectionID)
-                .filter(sql: downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
-                .order(Column("title_sort").asc)
-                .limit(limit, offset: offset)
-                .fetchAll(db)
+            // Built up rather than one static string with embedded ternaries:
+            // several of these conditions are genuinely conditional — present
+            // in the SQL only when the matching filter is active — and a `?`
+            // placeholder that isn't actually in the final string is exactly
+            // the kind of argument-array misalignment that fails silently
+            // rather than at compile time. Collecting clause and argument
+            // together, one filter at a time, keeps every `?` paired with
+            // the value that belongs to it.
+            var clauses = ["book.library_section_id = ?"]
+            var arguments: [DatabaseValueConvertible] = [sectionID]
+
+            if downloadedOnly {
+                clauses.append(Self.downloadedOnlyFilter("book.rating_key"))
+            }
+            if let language = filter.language {
+                clauses.append("book.language = ?")
+                arguments.append(language)
+            }
+            if filter.abridgedOnly {
+                clauses.append("book.edition = 'Abridged'")
+            }
+            if filter.fullCastOrDramatizedOnly {
+                clauses.append("book.production_type IN ('Full cast', 'Dramatized')")
+            }
+            if filter.downloadedOnly {
+                clauses.append(Self.downloadedOnlyFilter("book.rating_key"))
+            }
+            if filter.finishedOnly {
+                clauses.append("""
+                    EXISTS (SELECT 1 FROM progress
+                            WHERE progress.book_rating_key = book.rating_key
+                              AND progress.finished_at IS NOT NULL)
+                    """)
+            }
+            if filter.unfinishedOnly {
+                clauses.append("""
+                    NOT EXISTS (SELECT 1 FROM progress
+                                WHERE progress.book_rating_key = book.rating_key
+                                  AND progress.finished_at IS NOT NULL)
+                    """)
+            }
+
+            let orderBy: String
+            switch sort {
+            case .title: orderBy = "book.title_sort COLLATE NOCASE ASC"
+            case .recentlyAdded: orderBy = "book.added_at DESC"
+            // NULLS LAST by hand: SQLite puts NULL before every value in an
+            // ASC sort by default, which would put every book with no
+            // release date first — the opposite of "most recent."
+            case .releaseYear: orderBy = "book.year IS NULL, book.year DESC"
+            case .publicationYear: orderBy = "book.work_published_year IS NULL, book.work_published_year DESC"
+            }
+
+            arguments.append(contentsOf: [limit ?? -1, offset] as [DatabaseValueConvertible])
+            return try BookRecord.fetchAll(db, sql: """
+                SELECT book.* FROM book
+                WHERE \(clauses.joined(separator: " AND "))
+                ORDER BY \(orderBy)
+                LIMIT ? OFFSET ?
+                """, arguments: StatementArguments(arguments))
+        }
+    }
+
+    /// Every language actually present in this library, for populating a
+    /// filter picker with real options rather than a fixed list guessing at
+    /// what a given library might contain.
+    public func distinctLanguages(sectionID: String) throws -> [String] {
+        try database.writer.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT DISTINCT language FROM book
+                WHERE library_section_id = ? AND language IS NOT NULL
+                ORDER BY language COLLATE NOCASE ASC
+                """, arguments: [sectionID])
         }
     }
 
@@ -486,6 +618,126 @@ public struct LibraryStore: Sendable {
                 .order(Column("added_at").desc)
                 .limit(limit)
                 .fetchAll(db)
+        }
+    }
+
+    /// Books whose metadata changed on Plex most recently — distinct from
+    /// `recentlyAdded`, which is about when a book joined the library, not
+    /// when the agent last had something new to say about it. A book the
+    /// agent just re-matched, adding a work identity or a narrator it didn't
+    /// have before, surfaces here without needing to have been added
+    /// recently at all.
+    ///
+    /// Directly downstream of `LibrarySync`'s own incremental detail
+    /// refresh: this is only as fresh as `plex_updated_at` is, which now
+    /// actually gets updated when a book's Mood-derived fields change,
+    /// rather than sitting write-only the way it did before that fix.
+    public func recentlyUpdated(
+        sectionID: String,
+        limit: Int = 12,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord
+                .filter(Column("library_section_id") == sectionID)
+                .filter(Column("plex_updated_at") != nil)
+                .filter(sql: downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                .order(Column("plex_updated_at").desc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
+    /// Books explicitly tagged `Edition: Unabridged`.
+    ///
+    /// Never inferred from a missing `Edition:` tag — the contract is
+    /// explicit that most unabridged recordings never say so, and treating
+    /// silence as unabridged would put every untagged book on this shelf
+    /// alongside the genuinely confirmed ones.
+    public func unabridged(
+        sectionID: String,
+        limit: Int = 12,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(db, sql: """
+                SELECT * FROM book
+                WHERE library_section_id = ?
+                  AND edition = 'Unabridged'
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                ORDER BY title_sort COLLATE NOCASE ASC
+                LIMIT ?
+                """, arguments: [sectionID, limit])
+        }
+    }
+
+    /// Books whose `Production:` is `Full cast` or `Dramatized` — the two
+    /// values, of the five the contract allows, that describe something
+    /// meaningfully different to listen to rather than one reader alone.
+    /// Never inferred from narrator count, matching the contract's own
+    /// explicit rule that production type must not be guessed.
+    public func fullCastOrDramatized(
+        sectionID: String,
+        limit: Int = 12,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(db, sql: """
+                SELECT * FROM book
+                WHERE library_section_id = ?
+                  AND production_type IN ('Full cast', 'Dramatized')
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                ORDER BY title_sort COLLATE NOCASE ASC
+                LIMIT ?
+                """, arguments: [sectionID, limit])
+        }
+    }
+
+    /// Under three hours — a threshold chosen for "something to finish in
+    /// an evening" rather than derived from anything the agent sends.
+    static let shortListenThresholdMs = 3 * 60 * 60 * 1000
+
+    /// Over twenty hours — long enough that "how much is left" matters more
+    /// than for most books on the shelf above.
+    static let longListenThresholdMs = 20 * 60 * 60 * 1000
+
+    /// Books under `shortListenThresholdMs`, shortest first — the shelf
+    /// exists to answer "what can I finish soon," so the shortest is the
+    /// most useful book to see first, unlike every duration-agnostic shelf
+    /// elsewhere which orders by title.
+    public func shortListens(
+        sectionID: String,
+        limit: Int = 12,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(db, sql: """
+                SELECT * FROM book
+                WHERE library_section_id = ?
+                  AND duration_ms IS NOT NULL AND duration_ms < ?
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                ORDER BY duration_ms ASC
+                LIMIT ?
+                """, arguments: [sectionID, Self.shortListenThresholdMs, limit])
+        }
+    }
+
+    /// Books over `longListenThresholdMs`, longest first — the shelf exists
+    /// to answer "what's the big one to start next," so the longest leads.
+    public func longListens(
+        sectionID: String,
+        limit: Int = 12,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(db, sql: """
+                SELECT * FROM book
+                WHERE library_section_id = ?
+                  AND duration_ms IS NOT NULL AND duration_ms > ?
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                ORDER BY duration_ms DESC
+                LIMIT ?
+                """, arguments: [sectionID, Self.longListenThresholdMs, limit])
         }
     }
 
@@ -617,7 +869,18 @@ public struct LibraryStore: Sendable {
     ///
     /// A book in the series with no `Sequence:` tag at all still appears — it is
     /// in the series, the agent just did not say where.
-    public func books(inSeries series: String, downloadedOnly: Bool = false) throws -> [SeriesEntry] {
+    ///
+    /// Scoped to one section, which it was not. `series(sectionID:)` builds the
+    /// list of series from one library, and this built the books behind each of
+    /// them from every library cached on the device — so two audiobook sections
+    /// that both hold a series called `Dune`, or one library still cached from
+    /// a server signed out of, put their books on the same screen. The count on
+    /// the row and the list behind it were counting different things.
+    public func books(
+        inSeries series: String,
+        sectionID: String,
+        downloadedOnly: Bool = false
+    ) throws -> [SeriesEntry] {
         try database.writer.read { db in
             let sql = """
                 SELECT book.rating_key AS rating_key,
@@ -628,6 +891,7 @@ public struct LibraryStore: Sendable {
                   ON book_sequence.book_rating_key = book.rating_key
                  AND book_sequence.series = book_series.name
                 WHERE book_series.name = ?
+                  AND book.library_section_id = ?
                   AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
                 ORDER BY book.title_sort COLLATE NOCASE ASC
                 """
@@ -635,7 +899,7 @@ public struct LibraryStore: Sendable {
             var placed: [(entry: SeriesEntry, sort: Double)] = []
             var unplaced: [SeriesEntry] = []
 
-            for row in try Row.fetchAll(db, sql: sql, arguments: [series]) {
+            for row in try Row.fetchAll(db, sql: sql, arguments: [series, sectionID]) {
                 guard let book = try BookRecord.fetchOne(db, key: row["rating_key"] as String)
                 else { continue }
 
@@ -650,6 +914,54 @@ public struct LibraryStore: Sendable {
             }
 
             return placed.sorted { $0.sort < $1.sort }.map(\.entry) + unplaced
+        }
+    }
+
+    /// Other recordings of the same literary work — an abridgment beside its
+    /// unabridged twin, a re-recording, a different narrator's take.
+    ///
+    /// Grouping only. Nothing here reads or writes progress, bookmarks or
+    /// completion — those stay keyed by each edition's own identity, exactly
+    /// as `WorkIdentity`'s own documentation requires.
+    ///
+    /// Empty for a book with no `Work-ID:`, or one whose work nothing else in
+    /// this library shares — which is the ordinary case, not an error.
+    public func otherEditions(ofWork workIdentity: String, excluding ratingKey: String) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM book
+                    WHERE work_identity = ? AND rating_key != ?
+                    ORDER BY title_sort COLLATE NOCASE ASC
+                    """,
+                arguments: [workIdentity, ratingKey]
+            )
+        }
+    }
+
+    /// Every book crediting one contributor, by their stable key rather than
+    /// by name — so a translated or corrected display name never drops a
+    /// book from this list, and two different people who happen to share a
+    /// name are never merged into it.
+    public func books(
+        byContributor contributorKey: String,
+        sectionID: String,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            try BookRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT book.* FROM book_contributor
+                    JOIN book ON book.rating_key = book_contributor.book_rating_key
+                    WHERE book_contributor.contributor_key = ?
+                      AND book.library_section_id = ?
+                      AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                    ORDER BY book.title_sort COLLATE NOCASE ASC
+                    """,
+                arguments: [contributorKey, sectionID]
+            )
         }
     }
 
@@ -709,6 +1021,60 @@ public struct LibraryStore: Sendable {
         book.authors.first ?? book.author
     }
 
+    /// Which of these books have changed on Plex since they were last fully
+    /// cached, or have never been fully cached at all.
+    ///
+    /// The list endpoint a regular sync uses can never carry Mood, Style or
+    /// Genre — only the per-book detail can — so a book's `updatedAt`
+    /// changing on Plex is otherwise invisible to anything the list sync
+    /// alone does: series, contributors, work identity and every other
+    /// Mood-derived field stay exactly as stale as they were the day this
+    /// book was last opened, no matter how many times the library is
+    /// refreshed. This is what lets a sync notice the difference and go
+    /// fetch that one book's full detail instead.
+    ///
+    /// A book with no cached tracks is treated as changed regardless of its
+    /// `updatedAt` — it has never had its full detail fetched at all, so
+    /// there is nothing stale to compare against, only something missing.
+    /// Deliberately not keyed on `identity_key` for this: the list query
+    /// also asks for GUIDs (see `PlexServerClient.books`), so a book that
+    /// has only ever been through the list sync already has one, and would
+    /// otherwise look indistinguishable from a book whose full detail was
+    /// actually fetched. Tracks are the one thing that genuinely only ever
+    /// arrives with the full detail.
+    public func booksNeedingFullRefresh(
+        among candidates: [(ratingKey: String, updatedAt: Date?)]
+    ) throws -> [String] {
+        guard !candidates.isEmpty else { return [] }
+
+        return try database.writer.read { db in
+            var needsRefresh: [String] = []
+            for candidate in candidates {
+                let cached = try Row.fetchOne(
+                    db,
+                    sql: "SELECT plex_updated_at FROM book WHERE rating_key = ?",
+                    arguments: [candidate.ratingKey]
+                )
+                guard let cached else {
+                    // Not cached at all yet — cacheBookList will insert it
+                    // this pass, and it will need its own detail fetch too.
+                    needsRefresh.append(candidate.ratingKey)
+                    continue
+                }
+                let hasTracks = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM track WHERE book_rating_key = ?",
+                    arguments: [candidate.ratingKey]
+                ) ?? 0
+                let cachedUpdatedAt: Date? = cached["plex_updated_at"]
+                if hasTracks == 0 || cachedUpdatedAt != candidate.updatedAt {
+                    needsRefresh.append(candidate.ratingKey)
+                }
+            }
+            return needsRefresh
+        }
+    }
+
     /// Who wrote and read a book, and what it belongs to.
     ///
     /// One query rather than three: a book screen wants all of it at once, and
@@ -726,7 +1092,21 @@ public struct LibraryStore: Sendable {
 
             let book = try Row.fetchOne(
                 db,
-                sql: "SELECT language, edition FROM book WHERE rating_key = ?",
+                sql: """
+                    SELECT language, edition, work_identity, work_published_year,
+                           production_type, rating_source, rating_count
+                    FROM book WHERE rating_key = ?
+                    """,
+                arguments: [bookRatingKey]
+            )
+
+            let contributors = try ContributorRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM book_contributor
+                    WHERE book_rating_key = ?
+                    ORDER BY role, display_name COLLATE NOCASE
+                    """,
                 arguments: [bookRatingKey]
             )
 
@@ -735,7 +1115,13 @@ public struct LibraryStore: Sendable {
                 narrators: try names("book_narrator"),
                 series: try names("book_series"),
                 language: book?["language"],
-                edition: book?["edition"]
+                edition: book?["edition"],
+                workIdentity: book?["work_identity"],
+                workPublishedYear: book?["work_published_year"],
+                productionType: book?["production_type"],
+                ratingSource: book?["rating_source"],
+                ratingCount: book?["rating_count"],
+                contributors: contributors
             )
         }
     }
@@ -870,11 +1256,13 @@ public struct LibraryStore: Sendable {
         }
     }
 
-    /// Authors, with how many books each has.
+    /// Writers, with how many books each has.
     ///
-    /// Straight from the cache: Plex models the author as the album artist, and
-    /// it is already on every book row, so this needs no network at all.
-    /// Authors, with a few covers each.
+    /// Straight from the cache, from the tags the metadata agent wrote, so this
+    /// needs no network at all. Writers rather than authors as a matter of
+    /// wording: Plex's own album artist is not consulted, so a narrator credited
+    /// as the artist of a badly tagged file does not appear here.
+    /// Writers, with a few covers each.
     ///
     /// The covers are for the television, which cannot show a list of names and
     /// a number and call it browsing — there is no pointer, the row heights are
@@ -964,33 +1352,39 @@ public struct LibraryStore: Sendable {
         downloadedOnly: Bool = false
     ) throws -> [AuthorSummary] {
         try database.writer.read { db in
-            // Two ways a book belongs to an author, unioned.
+            // `book_author` only. Plex's album artist is not a writer.
             //
-            // `book.author` is Plex's album artist — one name, whoever the
-            // scanner picked. `book_author` is every author the metadata agent
-            // credited, which is what a co-written book actually has.
+            // `book.author` is `parentTitle` — whatever the scanner made of the
+            // files' `ALBUMARTIST` tag — and in an audiobook library that field
+            // is routinely not a writer at all. It holds the narrator, or a
+            // writer and a narrator joined with a comma, or two co-writers as
+            // one string. Unioning it into this list put all of those on a
+            // screen headed Writers, and produced a second Terry Pratchett
+            // sitting beside the first because "Terry Pratchett, Stephen Baxter"
+            // is a different string from "Terry Pratchett" and nothing here
+            // normalises names.
             //
-            // Reading only the first meant a book by two writers appeared under
-            // one of them and was missing from the other's page entirely. The
-            // contract spells out the fix: albums under the artist, together
-            // with albums whose Mood equals the name.
+            // `book_author` is every author the metadata agent credited, one
+            // row per person, which is a statement about the book rather than
+            // about a tag. It is the only source now, so a book the agent has
+            // not matched has no writer and does not appear. That is the
+            // deliberate trade: an unmatched library browses by writer poorly
+            // rather than wrongly, and the fix for it lives in the agent.
             //
-            // `UNION` rather than `UNION ALL`: a book normally satisfies both
-            // sides — its primary author is also one of its Mood authors — and
-            // counting it twice would say a writer has forty books when they
-            // have twenty.
+            // A book still shows a name under its cover in the meantime —
+            // `displayAuthor(for:)` keeps its fallback to the album artist,
+            // because a label with nothing in it is worse than a label that is
+            // only probably right. This is the *index*, where being wrong is
+            // worse: it puts a person on a page that claims they write books.
+            //
+            // `DISTINCT` over the whole projection, `rating_key` included, so
+            // two different books that happen to share a thumb and a sort title
+            // are still two books. Distinguishing on the name alone would
+            // undercount an author whose books are all untagged.
             let sql = """
                 SELECT name AS author, thumb, title_sort FROM (
-                    SELECT book.author AS name, book.thumb AS thumb,
-                           book.title_sort AS title_sort, book.rating_key AS rating_key
-                    FROM book
-                    WHERE book.library_section_id = ?
-                      AND book.author IS NOT NULL AND book.author <> ''
-                      AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
-
-                    UNION
-
-                    SELECT book_author.name AS name, book.thumb AS thumb,
+                    SELECT DISTINCT
+                           book_author.name AS name, book.thumb AS thumb,
                            book.title_sort AS title_sort, book.rating_key AS rating_key
                     FROM book_author
                     JOIN book ON book.rating_key = book_author.book_rating_key
@@ -1004,7 +1398,7 @@ public struct LibraryStore: Sendable {
             var counts: [String: Int] = [:]
             var covers: [String: [String]] = [:]
 
-            for row in try Row.fetchAll(db, sql: sql, arguments: [sectionID, sectionID]) {
+            for row in try Row.fetchAll(db, sql: sql, arguments: [sectionID]) {
                 let author: String = row["author"]
                 if counts[author] == nil { order.append(author) }
                 counts[author, default: 0] += 1
@@ -1033,22 +1427,222 @@ public struct LibraryStore: Sendable {
         downloadedOnly: Bool = false
     ) throws -> [BookRecord] {
         try database.writer.read { db in
-            // The same union as `authors`: Plex's album artist, or any author the
-            // agent credited. A co-written book belongs on both writers' pages.
+            // The same source as `authors`, and only that source. Matching
+            // `book.author` as well would put books back on a writer's page
+            // that the list of writers no longer claims they wrote — the index
+            // and the page behind it have to agree about what an author is.
             try BookRecord.fetchAll(db, sql: """
                 SELECT book.* FROM book
                 WHERE book.library_section_id = ?
                   AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
-                  AND (
-                    book.author = ?
-                    OR EXISTS (
-                        SELECT 1 FROM book_author
-                        WHERE book_author.book_rating_key = book.rating_key
-                          AND book_author.name = ?
-                    )
+                  AND EXISTS (
+                      SELECT 1 FROM book_author
+                      WHERE book_author.book_rating_key = book.rating_key
+                        AND book_author.name = ?
                   )
                 ORDER BY book.title_sort COLLATE NOCASE ASC
-                """, arguments: [sectionID, author, author])
+                """, arguments: [sectionID, author])
+        }
+    }
+
+    /// Narrators, from `book_narrator` — Plex `Style` values, one row per
+    /// narrator per book.
+    ///
+    /// Simpler than `authors`: there is no single "primary narrator" field on
+    /// `book` the way `book.author` is Plex's own album artist for authors —
+    /// every narrator comes from `Style`, so there is only ever the one
+    /// source to read, no `UNION` needed to combine two ways of crediting
+    /// someone.
+    public func narrators(
+        sectionID: String,
+        coversPerNarrator: Int = 4,
+        downloadedOnly: Bool = false
+    ) throws -> [NarratorSummary] {
+        try database.writer.read { db in
+            let identities = try Self.narratorIdentities(db, sectionID: sectionID)
+
+            let sql = """
+                SELECT book_narrator.name AS narrator, book.thumb AS thumb,
+                       book.title_sort AS title_sort
+                FROM book_narrator
+                JOIN book ON book.rating_key = book_narrator.book_rating_key
+                WHERE book.library_section_id = ?
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                ORDER BY narrator COLLATE NOCASE ASC, title_sort COLLATE NOCASE ASC
+                """
+
+            // Keyed on the canonical identity where the agent supplied one and
+            // on the display name where it did not.
+            //
+            // A contributor key can never collide with a name: it always
+            // begins `spokenmeta:contributor:`, which no narrator is called.
+            //
+            // Grouping stays in the order the query returned, which is by
+            // name — so a group takes the position of the first name that
+            // fell into it, and the list is still alphabetical afterwards
+            // without a second sort.
+            var order: [String] = []
+            var names: [String: String] = [:]
+            var counts: [String: Int] = [:]
+            var covers: [String: [String]] = [:]
+
+            for row in try Row.fetchAll(db, sql: sql, arguments: [sectionID]) {
+                let narrator: String = row["narrator"]
+                let key = identities[narrator] ?? narrator
+
+                if counts[key] == nil {
+                    order.append(key)
+                    // The first spelling encountered, which is the one that
+                    // sorts first. Two spellings of one person merge here,
+                    // and one of them has to be the label; the alternative is
+                    // showing whichever the last row happened to carry.
+                    names[key] = narrator
+                }
+                counts[key, default: 0] += 1
+
+                if let thumb: String = row["thumb"], !thumb.isEmpty,
+                   covers[key, default: []].count < coversPerNarrator {
+                    covers[key, default: []].append(thumb)
+                }
+            }
+
+            return order.map { key in
+                NarratorSummary(
+                    name: names[key] ?? key,
+                    bookCount: counts[key] ?? 0,
+                    covers: covers[key] ?? []
+                )
+            }
+        }
+    }
+
+    /// Display name to canonical contributor key, for narrators in one section.
+    ///
+    /// The precedence, in order:
+    ///
+    /// 1. A provider-backed narrator identity — `audible`, `librivox` or
+    ///    `openlibrary`. An outside catalogue stands behind it.
+    /// 2. A `name:` identity. A fingerprint of the normalized display name:
+    ///    deterministic and portable between servers, and documented as a
+    ///    fallback rather than a claim about who somebody is.
+    /// 3. No identity at all: the `Style` value, which is a display name and
+    ///    is enough on its own. Most narrators on most libraries are here.
+    ///
+    /// Resolved in two passes, because those are two different questions.
+    ///
+    /// **Per credit**, one recording can carry both an `audible` identity and
+    /// the `name:` fallback for the same person, and the provider-backed one
+    /// is the better of the two. That is the precedence above, and it chooses
+    /// between two keys the agent attached to *one* credit.
+    ///
+    /// **Per name**, across the section, a name keeps a key only when every
+    /// credit agrees on the same one. Where two credits disagree, the name
+    /// itself does the grouping instead. The integration document is explicit
+    /// that two different provider-scoped keys must not be merged just because
+    /// their display names match, and picking a winner between them would be
+    /// exactly that. Falling back to the name is the conservative answer: the
+    /// two recordings still land together, which they would have anyway before
+    /// any of this existed, and nothing claims they are the same catalogued
+    /// person.
+    ///
+    /// So this can only ever merge two spellings that share one identical key,
+    /// and can never split one name across two entries. A narrator credited
+    /// with an identity on one recording and a bare `Style` value on another
+    /// stays one person, which is the case that made a per-book resolution
+    /// wrong.
+    private static func narratorIdentities(
+        _ db: Database, sectionID: String
+    ) throws -> [String: String] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT book_contributor.book_rating_key AS book,
+                   book_contributor.display_name AS name,
+                   book_contributor.contributor_key AS key
+            FROM book_contributor
+            JOIN book ON book.rating_key = book_contributor.book_rating_key
+            WHERE book.library_section_id = ?
+              AND book_contributor.role = 'narrator'
+            """, arguments: [sectionID])
+
+        // Pass one: one key per credit, provider-backed winning.
+        var perBook: [String: [String: String]] = [:]
+        for row in rows {
+            let book: String = row["book"]
+            let name: String = row["name"]
+            let key: String = row["key"]
+
+            var credits = perBook[book] ?? [:]
+            if let existing = credits[name] {
+                if !ContributorIdentity.isProviderBacked(key: existing),
+                   ContributorIdentity.isProviderBacked(key: key) {
+                    credits[name] = key
+                }
+            } else {
+                credits[name] = key
+            }
+            perBook[book] = credits
+        }
+
+        // Pass two: a name keeps a key only if every credit agrees on it.
+        var keysByName: [String: Set<String>] = [:]
+        for credits in perBook.values {
+            for (name, key) in credits {
+                keysByName[name, default: []].insert(key)
+            }
+        }
+
+        return keysByName.compactMapValues { keys -> String? in
+            keys.count == 1 ? keys.first : nil
+        }
+    }
+
+    /// Every display name that resolves to the same canonical key as this one.
+    ///
+    /// The counterpart to the grouping in `narrators`: if two spellings merged
+    /// into one row there, the page behind that row has to show both spellings'
+    /// books or the count and the list disagree. A narrator with no identity
+    /// resolves to just themselves, which is the case this had before.
+    private static func narratorAliases(
+        _ db: Database, sectionID: String, name: String
+    ) throws -> [String] {
+        let identities = try narratorIdentities(db, sectionID: sectionID)
+        guard let key = identities[name] else { return [name] }
+
+        let aliases = identities.filter { $0.value == key }.map(\.key)
+        return aliases.isEmpty ? [name] : aliases
+    }
+
+    public func books(
+        byNarrator narrator: String,
+        sectionID: String,
+        downloadedOnly: Bool = false
+    ) throws -> [BookRecord] {
+        try database.writer.read { db in
+            let aliases = try Self.narratorAliases(db, sectionID: sectionID, name: narrator)
+
+            // Placeholders built to match the alias count exactly. Written out
+            // rather than interpolating the names themselves: a narrator whose
+            // name contains a quote is not a SQL problem unless somebody makes
+            // it one.
+            let placeholders = Array(repeating: "?", count: aliases.count).joined(separator: ", ")
+            var arguments: [DatabaseValueConvertible] = [sectionID]
+            // Cast spelled out: `append(contentsOf:)` wants a sequence whose
+            // element *is* `DatabaseValueConvertible`, and `[String]` is not
+            // that sequence however convertible each element is on its own.
+            // The same cast appears in `books(sectionID:filter:sort:)` for the
+            // same reason.
+            arguments.append(contentsOf: aliases as [DatabaseValueConvertible])
+
+            return try BookRecord.fetchAll(db, sql: """
+                SELECT book.* FROM book
+                WHERE book.library_section_id = ?
+                  AND \(downloadedOnly ? Self.downloadedOnlyFilter("book.rating_key") : "1")
+                  AND EXISTS (
+                      SELECT 1 FROM book_narrator
+                      WHERE book_narrator.book_rating_key = book.rating_key
+                        AND book_narrator.name IN (\(placeholders))
+                  )
+                ORDER BY book.title_sort COLLATE NOCASE ASC
+                """, arguments: StatementArguments(arguments))
         }
     }
 
@@ -1089,13 +1683,30 @@ public struct LibraryStore: Sendable {
                       let here = Double(position)
                 else { continue }
 
+                // Confined to the section this book is in.
+                //
+                // Taken from the book itself rather than passed in, so no
+                // caller has to know: "the next book after this one" is a
+                // question about one library, and `book_sequence` holds every
+                // library the device has cached. Without this, finishing
+                // Dune #1 in one section could offer Dune #2 from another —
+                // a book that opens, plays from a server this screen was not
+                // looking at, and reads as the app losing track of which
+                // library it is in.
                 let members = try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT book_rating_key, position FROM book_sequence
-                        WHERE series = ? AND book_rating_key != ?
+                        SELECT book_sequence.book_rating_key AS book_rating_key,
+                               book_sequence.position AS position
+                        FROM book_sequence
+                        JOIN book ON book.rating_key = book_sequence.book_rating_key
+                        WHERE book_sequence.series = ?
+                          AND book_sequence.book_rating_key != ?
+                          AND book.library_section_id = (
+                              SELECT library_section_id FROM book WHERE rating_key = ?
+                          )
                         """,
-                    arguments: [series, ratingKey]
+                    arguments: [series, ratingKey, ratingKey]
                 )
 
                 let candidate = members
@@ -1278,6 +1889,75 @@ public struct AuthorSummary: Sendable, Hashable, Identifiable {
     }
 }
 
+/// A narrator, the same shape as `AuthorSummary` for the same reason: a
+/// grid of names, covers and a count, reached the same way.
+public struct NarratorSummary: Sendable, Hashable, Identifiable {
+    public let name: String
+    public let bookCount: Int
+    public let covers: [String]
+
+    public var id: String { name }
+
+    public init(name: String, bookCount: Int, covers: [String] = []) {
+        self.name = name
+        self.bookCount = bookCount
+        self.covers = covers
+    }
+}
+
+/// What to narrow the main Books grid to, using the same values the
+/// corresponding badge on each cover already shows. Every field defaults to
+/// "don't filter on this" rather than a sentinel, so an all-default
+/// `BookFilter()` behaves exactly like passing no filter at all — which is
+/// what `books(sectionID:...)`'s own default parameter relies on.
+///
+/// `downloadedOnly` here is a distinct concept from the function's own
+/// `downloadedOnly:` parameter, which is offline mode — an automatic,
+/// app-wide state, not something a person chose from a filter menu. Both
+/// can be true at once without conflict; they happen to produce the same
+/// SQL condition, which is fine, not a bug to resolve.
+public struct BookFilter: Sendable, Hashable {
+    public var language: String?
+    public var abridgedOnly = false
+    public var fullCastOrDramatizedOnly = false
+    public var downloadedOnly = false
+    public var finishedOnly = false
+    public var unfinishedOnly = false
+
+    public init(
+        language: String? = nil,
+        abridgedOnly: Bool = false,
+        fullCastOrDramatizedOnly: Bool = false,
+        downloadedOnly: Bool = false,
+        finishedOnly: Bool = false,
+        unfinishedOnly: Bool = false
+    ) {
+        self.language = language
+        self.abridgedOnly = abridgedOnly
+        self.fullCastOrDramatizedOnly = fullCastOrDramatizedOnly
+        self.downloadedOnly = downloadedOnly
+        self.finishedOnly = finishedOnly
+        self.unfinishedOnly = unfinishedOnly
+    }
+
+    public var isActive: Bool {
+        language != nil || abridgedOnly || fullCastOrDramatizedOnly
+            || downloadedOnly || finishedOnly || unfinishedOnly
+    }
+}
+
+/// How to order the main Books grid. Series position is deliberately not a
+/// case here — it only means something within one series, which is what
+/// `books(inSeries:)`'s own sequence-based ordering already exists for, not
+/// a way to sort an entire library where most books have no position at
+/// all.
+public enum BookSort: String, Sendable, CaseIterable {
+    case title
+    case recentlyAdded
+    case releaseYear
+    case publicationYear
+}
+
 /// A timeline rebuilt from cache. Distinct from `BookTimeline` because the
 /// offsets are read back rather than recomputed — if the two ever disagree,
 /// that is a bug worth catching rather than papering over.
@@ -1324,6 +2004,27 @@ public struct NextInSeries: Sendable, Hashable {
         case seriesTag(position: String)
         /// A Plex collection's own order.
         case collection(ratingKey: String)
+    }
+
+    /// How to introduce this on screen.
+    ///
+    /// The two sources deserve different words, and giving them the same ones
+    /// was the whole reason `Source` existed and nothing read it. A `Sequence:`
+    /// tag is the metadata agent stating a position; a collection is whatever
+    /// somebody dragged into it, in whatever order they dragged it. The client
+    /// contract asks that collections be treated as user data and that a series
+    /// not be derived from them alone — presenting a collection's order under
+    /// the word "series" is deriving one, in the only place a person would see
+    /// it.
+    ///
+    /// So the tag says "Next in Discworld" and the collection says "Next in the
+    /// Discworld collection". Both are still offered; only one of them claims
+    /// to know the reading order.
+    public var caption: String {
+        switch source {
+        case .seriesTag: "Next in \(seriesTitle)"
+        case .collection: "Next in the \(seriesTitle) collection"
+        }
     }
 
     public init(book: BookRecord, seriesTitle: String, source: Source) {
@@ -1409,6 +2110,28 @@ public struct BookCredits: Sendable, Hashable {
     /// why the contract forbids inferring one from a missing tag.
     public var edition: String?
 
+    /// The literary work this recording is an edition of, from `Work-ID:`.
+    ///
+    /// Grouping only — never a key for progress, bookmarks or completion. See
+    /// `WorkIdentity`'s own documentation in PlexKit.
+    public var workIdentity: String?
+
+    /// The work's first publication year, from `Work-Published:`. Distinct
+    /// from a recording's own release date.
+    public var workPublishedYear: Int?
+
+    /// How the recording was produced, from `Production:`.
+    public var productionType: String?
+
+    /// Where a rating came from, from `Rating-Source:`.
+    public var ratingSource: String?
+
+    /// How many ratings a book's rating is based on, from `Rating-Count:`.
+    public var ratingCount: Int?
+
+    /// Every contributor the agent matched to a stable source.
+    public var contributors: [ContributorRecord]
+
     public var isEmpty: Bool {
         authors.isEmpty && narrators.isEmpty && series.isEmpty
             && language == nil && edition == nil
@@ -1424,18 +2147,49 @@ public struct BookCredits: Sendable, Hashable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// Recording production and rating, joined for display, or nil when none
+    /// of the three is known.
+    ///
+    /// Same reasoning as `editionLine`: one place decides how partial data
+    /// reads, rather than every screen inventing its own handling of "some of
+    /// these three are missing."
+    public var productionLine: String? {
+        var parts: [String] = []
+        if let productionType { parts.append(productionType) }
+        if let ratingSource {
+            if let ratingCount {
+                parts.append("\(ratingSource) · \(ratingCount) ratings")
+            } else {
+                parts.append(ratingSource)
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     public init(
         authors: [String] = [],
         narrators: [String] = [],
         series: [String] = [],
         language: String? = nil,
-        edition: String? = nil
+        edition: String? = nil,
+        workIdentity: String? = nil,
+        workPublishedYear: Int? = nil,
+        productionType: String? = nil,
+        ratingSource: String? = nil,
+        ratingCount: Int? = nil,
+        contributors: [ContributorRecord] = []
     ) {
         self.authors = authors
         self.narrators = narrators
         self.series = series
         self.language = language
         self.edition = edition
+        self.workIdentity = workIdentity
+        self.workPublishedYear = workPublishedYear
+        self.productionType = productionType
+        self.ratingSource = ratingSource
+        self.ratingCount = ratingCount
+        self.contributors = contributors
     }
 }
 

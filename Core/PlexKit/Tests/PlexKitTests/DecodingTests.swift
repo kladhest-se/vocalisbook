@@ -237,6 +237,116 @@ struct DecodingTests {
         #expect(book.genres == ["Fantasy"])
     }
 
+    /// The shape a real server actually sends, which no other fixture here
+    /// had.
+    ///
+    /// Every tag fixture in this file was written as `{"tag": "..."}` and
+    /// nothing else, and they all passed against a decoder that could not read
+    /// a single tag off a live server. Plex sends an `id` and a `filter`
+    /// alongside the name on every Genre, Mood and Style child, and the `id`
+    /// is a **number**. `Tag.id` is a `String?` — it has to be, because a
+    /// `Guid` child carries its value there as a string — and the synthesised
+    /// decoder's `decodeIfPresent(String.self)` throws on a number rather than
+    /// returning nil. `plexArray` skipped every element that threw, which was
+    /// all of them, so a fully tagged book decoded to empty narrators, empty
+    /// genres and empty moods with no error anywhere.
+    ///
+    /// The symptom was a Narrators screen that stayed empty on a library where
+    /// the server plainly had twelve of them for one book.
+    @Test("Tags decode with the numeric id and filter Plex really sends")
+    func decodesTagsWithNumericIDs() throws {
+        let json = """
+        {"ratingKey":"154912","title":"Dune","parentTitle":"Frank Herbert",
+         "Genre":[{"id":91,"filter":"genre=91","tag":"Science Fiction"}],
+         "Style":[{"id":1201,"filter":"style=1201","tag":"Scott Brick"},
+                  {"id":1202,"filter":"style=1202","tag":"Orlagh Cassidy"},
+                  {"id":1203,"filter":"style=1203","tag":"Euan Morton"},
+                  {"id":1204,"filter":"style=1204","tag":"Simon Vance"}],
+         "Mood":[{"id":2001,"filter":"mood=2001","tag":"Frank Herbert"},
+                 {"id":2002,"filter":"mood=2002","tag":"Series: Dune"},
+                 {"id":2003,"filter":"mood=2003","tag":"Language: English"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.narrators == [
+            "Scott Brick", "Orlagh Cassidy", "Euan Morton", "Simon Vance",
+        ])
+
+        // The numeric id is read; a numeric *tag* would not be. Asserted here
+        // beside the case that needs the leniency, because the two fields
+        // are one line apart in the decoder and the difference between them
+        // is the entire fix.
+        let numericTag = try JSONDecoder().decode(PlexBook.self, from: Data("""
+        {"ratingKey":"1","title":"T","Style":[{"id":1,"tag":12345}]}
+        """.utf8))
+        #expect(numericTag.narrators.isEmpty)
+        #expect(book.genres == ["Science Fiction"])
+        #expect(book.authors == ["Frank Herbert"])
+        #expect(book.series == ["Dune"])
+        #expect(book.language == "English")
+    }
+
+    /// A dozen readers on one recording is normal, not an edge case.
+    ///
+    /// Every one of them is a display name in its own right — there is no
+    /// primary narrator field to fall back to and no reason to pick one.
+    @Test("Every Style value becomes a narrator")
+    func decodesManyNarrators() throws {
+        let names = [
+            "Scott Brick", "Orlagh Cassidy", "Euan Morton", "Simon Vance",
+            "Ilyana Kadushin", "Byron Jennings", "David R. Gordon", "Jason Culp",
+            "Kent Broadhurst", "Oliver Wyman", "Patricia Kilgarriff", "Scott Sowers",
+        ]
+        // Escaped rather than a raw string, matching every other fixture in
+        // this file and the seed helpers in the store's own tests.
+        let styles = names.enumerated()
+            .map { "{\"id\":\($0.offset + 1),\"tag\":\"\($0.element)\"}" }
+            .joined(separator: ",")
+        let json = "{\"ratingKey\":\"154912\",\"title\":\"Dune\",\"Style\":[\(styles)]}"
+
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+        #expect(book.narrators == names)
+    }
+
+    /// A narrator needs nothing but a Style value.
+    ///
+    /// `Contributor-ID:` gives a narrator a stable identity where the agent
+    /// matched one, and most narrators on most libraries have no such match.
+    /// Requiring one before showing a name would empty the screen for exactly
+    /// the libraries that need it most, so Style alone is enough — the
+    /// contributor identity is an addition to a narrator, never a condition
+    /// for being one.
+    @Test("A narrator with no Contributor-ID is still a narrator")
+    func styleOnlyNarrators() throws {
+        let json = """
+        {"ratingKey":"900","title":"Dune",
+         "Style":[{"id":1,"tag":"Scott Brick"},{"id":2,"tag":"Simon Vance"}],
+         "Mood":[{"id":3,"tag":"Contributor-ID: narrator:audible:B002SQ5DR4 = Scott Brick"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        // Both are narrators; only one of them has an identity.
+        #expect(book.narrators == ["Scott Brick", "Simon Vance"])
+        #expect(book.contributors.count == 1)
+        #expect(book.contributors.first?.displayName == "Scott Brick")
+    }
+
+    /// The `Guid` child is why `Tag.id` is a string in the first place.
+    ///
+    /// One type reads both lists, so making the numeric case work must not
+    /// break the case it was originally written for.
+    @Test("A Guid child still decodes with its string id")
+    func guidChildStillDecodes() throws {
+        let json = """
+        {"ratingKey":"900","title":"Dune",
+         "Guid":[{"id":"com.plexapp.agents.spokenmeta://work/OL893415W"},
+                 {"id":"com.plexapp.agents.plexmusic://album/12345"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.guid == "com.plexapp.agents.spokenmeta://work/OL893415W")
+    }
+
     /// The prefix is matched exactly, as the agent specifies.
     ///
     /// Anything looser turns an author whose name mentions the word into a
@@ -269,7 +379,7 @@ struct DecodingTests {
         #expect(book.series.isEmpty)
     }
 
-    /// The four namespaces the contract reserves.
+    /// The ten namespaces the contract reserves.
     ///
     /// Missing one means it shows up as a person: a library listing "English"
     /// and "Unabridged" among its authors, which reads as a scanning fault
@@ -280,7 +390,10 @@ struct DecodingTests {
         {"ratingKey":"900","title":"Wyrd Sisters",
          "Mood":[{"tag":"Terry Pratchett"},{"tag":"Series: Discworld"},
                  {"tag":"Sequence: Discworld #6"},{"tag":"Language: English"},
-                 {"tag":"Edition: Unabridged"}]}
+                 {"tag":"Edition: Unabridged"},{"tag":"Work-ID: openlibrary:OL12345W"},
+                 {"tag":"Contributor-ID: author:openlibrary:OL2162289A = Andy Weir"},
+                 {"tag":"Work-Published: 1950"},{"tag":"Production: Full cast"},
+                 {"tag":"Rating-Source: Audible"},{"tag":"Rating-Count: 48217"}]}
         """
         let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
 
@@ -289,6 +402,140 @@ struct DecodingTests {
         #expect(book.language == "English")
         #expect(book.edition == "Unabridged")
         #expect(book.sequences == [BookSequence(series: "Discworld", position: "6")])
+        #expect(book.workIdentity?.key == "spokenmeta:work:openlibrary:OL12345W")
+        #expect(book.contributors.map(\.key) == ["spokenmeta:contributor:author:openlibrary:OL2162289A"])
+        #expect(book.workPublishedYear == 1950)
+        #expect(book.productionType == "Full cast")
+        #expect(book.ratingSource == "Audible")
+        #expect(book.ratingCount == 48217)
+    }
+
+    /// Everything the v2/v3 contract adds is optional. A library still on the
+    /// v1 contract, or one where the agent simply had no evidence for these,
+    /// must decode exactly as it did before any of this existed.
+    @Test("The app works when v2/v3 metadata is absent")
+    func v2AndV3MetadataIsOptional() throws {
+        let json = """
+        {"ratingKey":"900","title":"Wyrd Sisters",
+         "Mood":[{"tag":"Terry Pratchett"},{"tag":"Series: Discworld"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.workIdentity == nil)
+        #expect(book.contributors.isEmpty)
+        #expect(book.workPublishedYear == nil)
+        #expect(book.productionType == nil)
+        #expect(book.ratingSource == nil)
+        #expect(book.ratingCount == nil)
+        // v1 fields are unaffected by v2/v3's total absence.
+        #expect(book.authors == ["Terry Pratchett"])
+        #expect(book.series == ["Discworld"])
+    }
+
+    /// Mirrors VocalisMeta's own published test vector
+    /// (`malformed_reserved_values_are_ignored_not_authors` in
+    /// `test-vectors-v3.json`) as directly as possible — same Moods, same
+    /// expected result — rather than a version invented independently.
+    /// Every malformed value here looks superficially plausible; the point
+    /// is that each is rejected anyway, not silently displayed as though it
+    /// were real.
+    @Test("Malformed v3 values are ignored, matching VocalisMeta's own published test vector")
+    func malformedV3ValuesAreIgnored() throws {
+        let json = """
+        {"ratingKey":"900","title":"A Book",
+         "Mood":[{"tag":"Andy Weir"},
+                 {"tag":"Contributor-ID: translator:audible:B00G0WYW92 = Someone"},
+                 {"tag":"Contributor-ID: author:openlibrary:OL123W = Someone"},
+                 {"tag":"Work-Published: unknown"},
+                 {"tag":"Production: Probably full cast"},
+                 {"tag":"Rating-Source: Unknown"},
+                 {"tag":"Rating-Count: many"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.authors == ["Andy Weir"])
+        #expect(book.contributors.isEmpty)
+        #expect(book.workPublishedYear == nil)
+        #expect(book.productionType == nil)
+        #expect(book.ratingSource == nil)
+        #expect(book.ratingCount == nil)
+    }
+
+    /// Reproduces the theorized cause of a real discrepancy: a live
+    /// diagnostics fetch showing no series for a book whose cache had one.
+    /// Before this test existed, `Mood` decoding was one `try?` around the
+    /// whole array — a single malformed element anywhere in the list threw
+    /// for the entire array, and the `try?` converted that into "every tag
+    /// on this book is gone," not just the bad one. A book with a perfectly
+    /// good `Series: Discworld` tag sharing a list with something this
+    /// decoder chokes on — a tag object with a number where a string was
+    /// expected, say — would have silently lost the series along with
+    /// everything else in Mood, purely because of what it shared a list
+    /// with, not anything wrong with the series tag itself.
+    @Test("One malformed Mood entry does not wipe out the rest of the array")
+    func oneMalformedMoodEntryDoesNotLoseTheRest() throws {
+        let json = """
+        {"ratingKey":"900","title":"Wyrd Sisters",
+         "Mood":[{"tag":"Terry Pratchett"},
+                 {"tag":12345},
+                 {"tag":"Series: Discworld"},
+                 {"tag":"Sequence: Discworld #6"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.authors == ["Terry Pratchett"])
+        #expect(book.series == ["Discworld"])
+        #expect(book.sequences.map(\.position) == ["6"])
+    }
+
+    /// The same failure mode, but the malformed element is the wrong shape
+    /// entirely — a bare string rather than a tag object — rather than an
+    /// object with one field of the wrong type.
+    @Test("A Mood entry that is not an object at all is skipped, not fatal to the array")
+    func moodEntryWithWrongShapeIsSkipped() throws {
+        let json = """
+        {"ratingKey":"900","title":"Wyrd Sisters",
+         "Mood":["not an object", {"tag":"Series: Discworld"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.series == ["Discworld"])
+    }
+
+    /// `Ljudboksarkivet`, added alongside `Audible` for Swedish-language
+    /// libraries. Placed right beside `malformedV3ValuesAreIgnored` above,
+    /// which covers the same field with an invalid value — together they
+    /// pin both edges of the same set membership check.
+    @Test("Ljudboksarkivet is an accepted rating source alongside Audible")
+    func ljudboksarkivetIsAcceptedRatingSource() throws {
+        let json = """
+        {"ratingKey":"900","title":"En Svensk Bok",
+         "Mood":[{"tag":"Language: Swedish"},
+                 {"tag":"Rating-Source: Ljudboksarkivet"},{"tag":"Rating-Count: 42"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.ratingSource == "Ljudboksarkivet")
+        #expect(book.ratingCount == 42)
+    }
+
+    /// A book can have several credited contributors, each with its own
+    /// `Contributor-ID:` Mood — not only one, the way `Work-ID:` is only one.
+    @Test("Multiple contributors are all kept, by role")
+    func multipleContributors() throws {
+        let json = """
+        {"ratingKey":"900","title":"A Book",
+         "Mood":[{"tag":"Contributor-ID: author:openlibrary:OL2162289A = Andy Weir"},
+                 {"tag":"Contributor-ID: narrator:librivox:20 = Ray Example"}]}
+        """
+        let book = try JSONDecoder().decode(PlexBook.self, from: Data(json.utf8))
+
+        #expect(book.contributors.count == 2)
+        #expect(book.contributors[0].role == "author")
+        #expect(book.contributors[0].displayName == "Andy Weir")
+        #expect(book.contributors[0].key == "spokenmeta:contributor:author:openlibrary:OL2162289A")
+        #expect(book.contributors[1].role == "narrator")
+        #expect(book.contributors[1].displayName == "Ray Example")
     }
 
     /// A novella between two books is `3.5`, and it is a real thing in most long

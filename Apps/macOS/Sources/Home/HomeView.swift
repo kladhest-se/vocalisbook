@@ -88,6 +88,67 @@ struct HomeView: View {
                     }
                 }
 
+                // Whatever the agent most recently had something new to say
+                // about — distinct from "Recently added" above, which is
+                // about when a book joined the library rather than when its
+                // metadata last changed. A book already here for months
+                // still surfaces the day it gets a work identity or a
+                // narrator it didn't have before.
+                if !model.recentlyUpdated.isEmpty {
+                    section("Recently updated") {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(model.recentlyUpdated, id: \.ratingKey) { book in
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                if !model.unabridged.isEmpty {
+                    section("Unabridged") {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(model.unabridged, id: \.ratingKey) { book in
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                if !model.fullCastOrDramatized.isEmpty {
+                    section("Full Cast & Dramatized") {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(model.fullCastOrDramatized, id: \.ratingKey) { book in
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                if !model.shortListens.isEmpty {
+                    section("Short Listens") {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(model.shortListens, id: \.ratingKey) { book in
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                if !model.longListens.isEmpty {
+                    section("Long Listens") {
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(model.longListens, id: \.ratingKey) { book in
+                                Button { open(book.ratingKey, book.title) } label: { BookTile(book: book) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
                 if model.isEmpty {
                     ContentUnavailableView(
                         "Nothing here yet",
@@ -152,6 +213,16 @@ final class HomeModel {
     private(set) var inProgress: [BookRecord] = []
     private(set) var recentlyAdded: [BookRecord] = []
 
+    /// Books whose metadata changed most recently — see
+    /// `LibraryStore.recentlyUpdated` for why this is not the same list as
+    /// `recentlyAdded`.
+    private(set) var recentlyUpdated: [BookRecord] = []
+
+    private(set) var unabridged: [BookRecord] = []
+    private(set) var fullCastOrDramatized: [BookRecord] = []
+    private(set) var shortListens: [BookRecord] = []
+    private(set) var longListens: [BookRecord] = []
+
     /// Books finished, most recently first.
     ///
     /// The other end of Continue listening. That list is what is in progress and
@@ -166,7 +237,8 @@ final class HomeModel {
     /// has no books in progress and nothing newly added, and would have shown
     /// the "nothing here yet" message above a screen full of finished books.
     var isEmpty: Bool {
-        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty
+        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty && recentlyUpdated.isEmpty
+            && unabridged.isEmpty && fullCastOrDramatized.isEmpty && shortListens.isEmpty && longListens.isEmpty
     }
 
     /// The list as shown: the observed rows, minus the one being played.
@@ -207,7 +279,12 @@ final class HomeModel {
         // memory of a database that no longer held any of it.
         guard let library = app.library, let sectionID = app.sectionID else {
             recentlyAdded = []
+            recentlyUpdated = []
             recentlyFinished = []
+            unabridged = []
+            fullCastOrDramatized = []
+            shortListens = []
+            longListens = []
             stats = nil
             return
         }
@@ -219,6 +296,25 @@ final class HomeModel {
             sectionID: sectionID,
             limit: 12,
             downloadedOnly: app.isOffline
+        )) ?? []
+
+        recentlyUpdated = (try? library.recentlyUpdated(
+            sectionID: sectionID,
+            limit: 12,
+            downloadedOnly: app.isOffline
+        )) ?? []
+
+        unabridged = (try? library.unabridged(
+            sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline
+        )) ?? []
+        fullCastOrDramatized = (try? library.fullCastOrDramatized(
+            sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline
+        )) ?? []
+        shortListens = (try? library.shortListens(
+            sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline
+        )) ?? []
+        longListens = (try? library.longListens(
+            sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline
         )) ?? []
 
         recentlyFinished = (try? library.recentlyFinished(

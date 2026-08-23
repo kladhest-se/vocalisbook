@@ -140,6 +140,96 @@ struct HomeView: View {
                     }
                 }
 
+                // Distinct from "Recently added" above: this is about when
+                // the agent last had something new to say about a book, not
+                // when it joined the library. One already here for months
+                // still surfaces the day it gets a work identity or a
+                // narrator it didn't have before.
+                if !model.recentlyUpdated.isEmpty {
+                    Section(title: "Recently updated") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(model.recentlyUpdated, id: \.ratingKey) { book in
+                                    Button { selection = book.ratingKey } label: {
+                                        BookTile(book: book).frame(width: tileWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.horizontal, -20)
+                    }
+                }
+
+                if !model.unabridged.isEmpty {
+                    Section(title: "Unabridged") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(model.unabridged, id: \.ratingKey) { book in
+                                    Button { selection = book.ratingKey } label: {
+                                        BookTile(book: book).frame(width: tileWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.horizontal, -20)
+                    }
+                }
+
+                if !model.fullCastOrDramatized.isEmpty {
+                    Section(title: "Full Cast & Dramatized") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(model.fullCastOrDramatized, id: \.ratingKey) { book in
+                                    Button { selection = book.ratingKey } label: {
+                                        BookTile(book: book).frame(width: tileWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.horizontal, -20)
+                    }
+                }
+
+                if !model.shortListens.isEmpty {
+                    Section(title: "Short Listens") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(model.shortListens, id: \.ratingKey) { book in
+                                    Button { selection = book.ratingKey } label: {
+                                        BookTile(book: book).frame(width: tileWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.horizontal, -20)
+                    }
+                }
+
+                if !model.longListens.isEmpty {
+                    Section(title: "Long Listens") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(model.longListens, id: \.ratingKey) { book in
+                                    Button { selection = book.ratingKey } label: {
+                                        BookTile(book: book).frame(width: tileWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .padding(.horizontal, -20)
+                    }
+                }
+
                 if model.isEmpty {
                     EmptyLibraryView(isRefreshing: model.isRefreshing)
                 }
@@ -332,6 +422,16 @@ final class HomeModel {
     private(set) var currentProgress: ProgressRecord?
     private(set) var recentlyAdded: [BookRecord] = []
 
+    /// Books whose metadata changed most recently — see
+    /// `LibraryStore.recentlyUpdated` for why this is not the same list as
+    /// `recentlyAdded`.
+    private(set) var recentlyUpdated: [BookRecord] = []
+
+    private(set) var unabridged: [BookRecord] = []
+    private(set) var fullCastOrDramatized: [BookRecord] = []
+    private(set) var shortListens: [BookRecord] = []
+    private(set) var longListens: [BookRecord] = []
+
     /// Books finished, most recently first.
     ///
     /// The other end of Continue listening. That list is what is in progress and
@@ -355,7 +455,8 @@ final class HomeModel {
     /// has no books in progress and nothing newly added, and would have shown
     /// the "nothing here yet" message above a screen full of finished books.
     var isEmpty: Bool {
-        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty
+        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty && recentlyUpdated.isEmpty
+            && unabridged.isEmpty && fullCastOrDramatized.isEmpty && shortListens.isEmpty && longListens.isEmpty
     }
 
     /// The list as shown: the observed rows, minus the one being played.
@@ -408,7 +509,12 @@ final class HomeModel {
         // memory of a database that no longer held any of it.
         guard let library = app.library, let sectionID = app.sectionID else {
             recentlyAdded = []
+            recentlyUpdated = []
             recentlyFinished = []
+            unabridged = []
+            fullCastOrDramatized = []
+            shortListens = []
+            longListens = []
             stats = nil
             return
         }
@@ -423,7 +529,12 @@ final class HomeModel {
         // The in-progress list is not read here: it is observed, and arrives on
         // its own. This is for the parts that only change when the library does.
         recentlyAdded = (try? library.recentlyAdded(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
+        recentlyUpdated = (try? library.recentlyUpdated(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
         recentlyFinished = (try? library.recentlyFinished(limit: 12, downloadedOnly: app.isOffline)) ?? []
+        unabridged = (try? library.unabridged(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
+        fullCastOrDramatized = (try? library.fullCastOrDramatized(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
+        shortListens = (try? library.shortListens(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
+        longListens = (try? library.longListens(sectionID: sectionID, limit: 12, downloadedOnly: app.isOffline)) ?? []
         stats = try? app.sessions.stats(sectionID: app.sectionID)
     }
 

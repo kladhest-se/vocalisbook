@@ -27,10 +27,19 @@ struct LibraryView: View {
                 // be this screen, so the television showed every book twice and
                 // showed where you left off nowhere.
 
-                Text(model.search.isEmpty ? "Library" : "Results")
-                    .font(.title2.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 12)
+                HStack {
+                    Text(model.search.isEmpty ? "Library" : "Results")
+                        .font(.title2.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    NavigationLink {
+                        FilterSortView(filter: $model.filter, sort: $model.sort, languages: model.availableLanguages)
+                    } label: {
+                        Image(systemName: model.filter.isActive || model.sort != .title
+                              ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("Filter and sort")
+                }
+                .padding(.top, 12)
 
                 LazyVGrid(columns: columns, spacing: 48) {
                     ForEach(model.books, id: \.ratingKey) { book in
@@ -73,6 +82,8 @@ struct LibraryView: View {
             // only way in.
             .searchable(text: $model.search, prompt: "Title or author")
             .onChange(of: model.search) { _, _ in model.reload(app: app) }
+            .onChange(of: model.filter) { _, _ in model.reload(app: app) }
+            .onChange(of: model.sort) { _, _ in model.reload(app: app) }
             // Found in the same audit that added this elsewhere: no theme
             // awareness at all in this file previously, not even for text —
             // the empty-state message above read `.secondary`, a system
@@ -113,6 +124,9 @@ final class LibraryModel {
     /// Reads from the cache. On this platform the cache may be empty on any
     /// launch, which is ordinary rather than an error — `refresh` repopulates it.
     var search = ""
+    var filter = BookFilter()
+    var sort = BookSort.title
+    private(set) var availableLanguages: [String] = []
 
     /// Whether the last read failed, as opposed to finding nothing.
     private(set) var loadFailed = false
@@ -127,6 +141,7 @@ final class LibraryModel {
         guard let library = app.library, let sectionID = app.sectionID else {
             books = []
             loadFailed = false
+            availableLanguages = []
             return
         }
         // Searched in the database rather than filtered in memory, so a large
@@ -136,10 +151,17 @@ final class LibraryModel {
         // A failed read is not an empty library. `try?` makes them the same
         // array and the screen then gives advice that cannot help.
         do {
+            // Filter and sort are not applied while searching, matching the
+            // other two platforms. No `downloadedOnly` in `filter` is ever set
+            // to true here — this platform has no downloads feature at all,
+            // and the filter UI below never offers the toggle that would set
+            // it, the same way `BookTile` here never gained the badge that
+            // would show it.
             books = try search.isEmpty
-                ? library.books(sectionID: sectionID)
+                ? library.books(sectionID: sectionID, filter: filter, sort: sort)
                 : library.search(search)
             loadFailed = false
+            availableLanguages = (try? library.distinctLanguages(sectionID: sectionID)) ?? []
         } catch {
             books = []
             loadFailed = true
@@ -189,18 +211,175 @@ final class LibraryModel {
     }
 }
 
+/// The Books grid's filter and sort control. Pushed rather than sheeted or
+/// popped over, matching `MetadataDiagnosticsView`'s own convention on this
+/// platform — no title, no on-screen dismiss button, since the remote's own
+/// Menu button is how every other pushed screen here is left.
+///
+/// `finishedOnly`/`unfinishedOnly` are two independent booleans on
+/// `BookFilter` — a shape that lets the data layer express "don't filter on
+/// progress" as both being false, without a third enum case existing purely
+/// for that — but they're mutually exclusive in this UI, which is why
+/// `progressSelection` below translates between them and a single
+/// three-way control rather than showing two toggles a person could set
+/// inconsistently. No "Downloaded only" toggle here — this platform has no
+/// downloads feature at all, the same reason `BookTile` below never gained
+/// that badge.
+struct FilterSortView: View {
+    @Binding var filter: BookFilter
+    @Binding var sort: BookSort
+    let languages: [String]
+    @Environment(\.theme) private var theme
+
+    private enum ProgressFilter: String, CaseIterable {
+        case all = "All", unfinished = "Unfinished", finished = "Finished"
+    }
+
+    private var progressSelection: Binding<ProgressFilter> {
+        Binding(
+            get: {
+                if filter.finishedOnly { return .finished }
+                if filter.unfinishedOnly { return .unfinished }
+                return .all
+            },
+            set: { newValue in
+                filter.finishedOnly = newValue == .finished
+                filter.unfinishedOnly = newValue == .unfinished
+            }
+        )
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Picker("Sort", selection: $sort) {
+                    Text("Title").tag(BookSort.title)
+                    Text("Recently added").tag(BookSort.recentlyAdded)
+                    Text("Release year").tag(BookSort.releaseYear)
+                    Text("Publication year").tag(BookSort.publicationYear)
+                }
+                if !languages.isEmpty {
+                    Picker("Language", selection: $filter.language) {
+                        Text("Any").tag(String?.none)
+                        ForEach(languages, id: \.self) { language in
+                            Text(language).tag(String?.some(language))
+                        }
+                    }
+                }
+                Picker("Progress", selection: progressSelection) {
+                    ForEach(ProgressFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+            }
+            Section {
+                Toggle("Abridged only", isOn: $filter.abridgedOnly)
+                Toggle("Full cast or dramatized only", isOn: $filter.fullCastOrDramatizedOnly)
+            }
+            if filter.isActive || sort != .title {
+                Section {
+                    Button("Reset") {
+                        filter = BookFilter()
+                        sort = .title
+                    }
+                }
+            }
+        }
+        .background(theme.background.ignoresSafeArea())
+    }
+}
+
 struct BookTile: View {
     let book: BookRecord
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             CoverImage(thumb: book.thumb)
                 .aspectRatio(1, contentMode: .fit)
+                .overlay(alignment: .topLeading) {
+                    // Language, when known — most valuable for a library that
+                    // genuinely mixes languages; harmless repetition otherwise.
+                    if let language = book.language {
+                        cornerBadge(text: languageAbbreviation(language))
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    // Abridged and a notable production type can both apply to
+                    // the same book at once, so this stacks rather than picks
+                    // one. Neither is inferred from anything: absence of a tag
+                    // is not evidence of the ordinary case, matching the
+                    // contract's own rule for both fields.
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if book.edition == "Abridged" {
+                            cornerIcon("scissors")
+                        }
+                        if let production = book.productionType,
+                           ["Full cast", "Dramatized"].contains(production) {
+                            cornerIcon("theatermasks")
+                        }
+                    }
+                }
+                // No "downloaded" badge here — tvOS has no downloads feature
+                // at all, deliberately: see the note on `AppModel` next to
+                // where `downloads` would be, and `PlatformCapabilities
+                // .supportsOfflineDownloads`, which this platform asserts
+                // false. `finished` sits alone in the bottom corner rather
+                // than paired with a badge that does not exist on this port.
+                .overlay(alignment: .bottomLeading) {
+                    if app.finishedKeys.contains(book.ratingKey) {
+                        cornerIcon("checkmark")
+                    }
+                }
             Text(book.title).font(.callout).lineLimit(2)
             if let author = book.author {
                 Text(author).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        // Every badge above is hidden from focus-based navigation and said
+        // here instead, where each joins the title rather than interrupting
+        // it as a set of unnamed images read out of order.
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(accessibilityBadgeSummary)
+    }
+
+    private var accessibilityBadgeSummary: String {
+        var parts: [String] = []
+        if let language = book.language { parts.append(language) }
+        if book.edition == "Abridged" { parts.append("Abridged") }
+        if let production = book.productionType,
+           ["Full cast", "Dramatized"].contains(production) {
+            parts.append(production)
+        }
+        if app.finishedKeys.contains(book.ratingKey) { parts.append("Finished") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// First two letters, uppercased — not a real ISO code, since VocalisMeta
+    /// sends a full name ("Swedish") rather than one to look up. Good enough
+    /// to tell two languages apart on a cover; the full name is one focus
+    /// press away on the book detail screen.
+    private func languageAbbreviation(_ language: String) -> String {
+        String(language.prefix(2)).uppercased()
+    }
+
+    private func cornerBadge(text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.black.opacity(0.55), in: .rect(cornerRadius: 6))
+            .padding(10)
+            .accessibilityHidden(true)
+    }
+
+    private func cornerIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(6)
+            .background(.black.opacity(0.55), in: .circle)
+            .padding(6)
+            .accessibilityHidden(true)
     }
 }
 

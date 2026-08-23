@@ -123,9 +123,26 @@ public enum BookIdentity: Sendable, Hashable {
 
         if let audible = audibleIdentity(id) { return audible }
 
+        // `!value.isEmpty` carries real weight here, unlike in the three forms
+        // below it.
+        //
+        // Those are guarded by a length: an ISBN is thirteen characters, a
+        // local fingerprint sixteen, an ASIN ten. This one is
+        // `^[1-9][0-9]*$` — any length — and both of the checks after it pass
+        // vacuously on an empty string: `"".first` is nil, which is not `"0"`,
+        // and `allSatisfy` on nothing is true. So a GUID reading
+        // `com.plexapp.agents.spokenmeta://librivox:` produced the identity
+        // `spokenmeta:librivox:`, portable and strong, and shared by every
+        // other book whose GUID was truncated the same way. That is the same
+        // failure the `name:` rejection above exists to prevent, arrived at
+        // from a different direction.
+        //
+        // ASCII digits rather than `isNumber`, which is true for Arabic-Indic
+        // digits and for vulgar fractions. The contract's regex is `[0-9]`.
         if let value = value(of: "librivox:", in: id),
+           !value.isEmpty,
            value.first != "0",
-           value.allSatisfy(\.isNumber) {
+           value.allSatisfy({ $0.isASCII && $0.isNumber }) {
             return .librivox(id: value)
         }
 
@@ -133,9 +150,11 @@ public enum BookIdentity: Sendable, Hashable {
             return .isbn(value)
         }
 
+        // ASCII again: `isHexDigit` is also true for the fullwidth forms, and
+        // the contract's regex is `[0-9a-f]` matched case-insensitively.
         if let value = value(of: "local:", in: id),
            value.count == 16,
-           value.allSatisfy({ $0.isHexDigit }) {
+           value.allSatisfy({ $0.isASCII && $0.isHexDigit }) {
             return .local(fingerprint: value.lowercased())
         }
 

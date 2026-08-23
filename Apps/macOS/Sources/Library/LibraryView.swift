@@ -27,6 +27,7 @@ struct LibraryView: View {
     /// Always at least one element; `current` is what is actually on screen.
     @State private var path: [SidebarItem] = [.home]
     @State private var showingProfile = false
+    @State private var showingFilters = false
     @Environment(\.theme) private var theme
 
     /// A real toggle, unlike the `.constant(.all)` this replaces.
@@ -123,6 +124,7 @@ struct LibraryView: View {
                     // nothing while pushing three of them below a Continue
                     // listening section that grows.
                     sidebarRow("Authors", "person", tag: .authors)
+                    sidebarRow("Narrators", "person.wave.2", tag: .narrators)
                     sidebarRow("Series", "square.stack", tag: .series)
                     sidebarRow("Genres", "theatermasks", tag: .genres)
 
@@ -192,6 +194,13 @@ struct LibraryView: View {
                         author: name,
                         open: { key, title in path.append(.book(ratingKey: key, title: title)) }
                     )
+                case .narrators:
+                    NarratorsView(onSelect: { path.append(.narratorDetail($0)) })
+                case .narratorDetail(let name):
+                    NarratorBooksView(
+                        narrator: name,
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) }
+                    )
                 case .series:
                     SeriesView(onSelect: { path.append(.seriesDetail($0)) })
                 case .seriesDetail(let name):
@@ -204,6 +213,12 @@ struct LibraryView: View {
                 case .genreDetail(let name):
                     GenreBooksView(
                         genre: name,
+                        open: { key, title in path.append(.book(ratingKey: key, title: title)) }
+                    )
+                case .contributorDetail(let key, let displayName):
+                    ContributorBooksView(
+                        contributorKey: key,
+                        displayName: displayName,
                         open: { key, title in path.append(.book(ratingKey: key, title: title)) }
                     )
                 case .downloads:
@@ -240,6 +255,14 @@ struct LibraryView: View {
                 path = [.allBooks]
                 model.reload(app: app)
             }
+            .onChange(of: model.filter) { _, _ in
+                path = [.allBooks]
+                model.reload(app: app)
+            }
+            .onChange(of: model.sort) { _, _ in
+                path = [.allBooks]
+                model.reload(app: app)
+            }
         }
         // ⌘R, from the View menu, which is how this is reached when the sidebar
         // is hidden and the button is not on screen.
@@ -262,6 +285,15 @@ struct LibraryView: View {
             }
             path = [.allBooks, .book(ratingKey: requested, title: title)]
             app.requestedBook = nil
+        }
+        .onChange(of: app.requestedContributor) { _, requested in
+            guard let requested else { return }
+            // Pushed onto whatever trail is already open, unlike
+            // `requestedBook` above: a contributor is always tapped from a
+            // book already on screen, so there is a browsing context for
+            // this to be a step *in* rather than a fresh trail replacing it.
+            path.append(.contributorDetail(key: requested.key, displayName: requested.displayName))
+            app.requestedContributor = nil
         }
         .task {
             model.reload(app: app)
@@ -403,8 +435,20 @@ struct LibraryView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .disabled(model.isRefreshing)
-                .help("Refresh library")
+                // Previously enabled but silently did nothing while offline —
+                // `refresh` itself guards on `app.librarySync`, which is nil
+                // whenever `isOffline` is true, so a press here looked
+                // identical to a working button that just happened not to
+                // find anything to do. Disabling it here, with a tooltip
+                // naming the actual reason, turns that into a control that
+                // honestly reports it can't act right now instead of one
+                // that quietly fails.
+                .disabled(model.isRefreshing || app.isOffline)
+                .help(
+                    app.isOffline
+                        ? "Turn off offline mode to refresh"
+                        : "Refresh library"
+                )
 
                 OfflineToggle()
 
@@ -459,6 +503,20 @@ struct LibraryView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(theme.surface, in: .capsule)
+
+            Button {
+                showingFilters = true
+            } label: {
+                Image(systemName: model.filter.isActive || model.sort != .title
+                      ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.text)
+            .help("Filter and sort")
+            .popover(isPresented: $showingFilters, arrowEdge: .bottom) {
+                FilterSortView(filter: $model.filter, sort: $model.sort, languages: model.availableLanguages)
+                    .frame(width: 280)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -530,6 +588,9 @@ final class LibraryModel {
     /// the reload has to happen.
     private var hasShownAPage = false
     var search = ""
+    var filter = BookFilter()
+    var sort = BookSort.title
+    private(set) var availableLanguages: [String] = []
 
     /// Reads from the local store only. Browsing never waits on the network.
     func reload(app: AppModel) {
@@ -542,15 +603,21 @@ final class LibraryModel {
         guard let library = app.library, let sectionID = app.sectionID else {
             books = []
             loadFailed = false
+            availableLanguages = []
             return
         }
         // A failed read is not an empty library. `try?` makes them the same
         // array and the screen then gives advice that cannot help.
         do {
+            // Filter and sort are not applied while searching — search is
+            // already its own separate query, matching by text rather than by
+            // any of these values, and combining the two is a bigger scope
+            // increase than this pass takes on.
             books = try search.isEmpty
-                ? library.books(sectionID: sectionID, downloadedOnly: app.isOffline)
+                ? library.books(sectionID: sectionID, downloadedOnly: app.isOffline, filter: filter, sort: sort)
                 : library.search(search, downloadedOnly: app.isOffline)
             loadFailed = false
+            availableLanguages = (try? library.distinctLanguages(sectionID: sectionID)) ?? []
         } catch {
             books = []
             loadFailed = true
@@ -600,6 +667,93 @@ final class LibraryModel {
     }
 }
 
+/// The Books grid's filter and sort control, opened from the funnel button
+/// beside search. `finishedOnly`/`unfinishedOnly` are two independent
+/// booleans on `BookFilter` — a shape that lets the data layer express
+/// "don't filter on progress" as simply both being false, without a third
+/// enum case existing purely for that — but they're mutually exclusive in
+/// this UI, which is why `progressSelection` below translates between them
+/// and a single three-way control rather than showing two toggles a person
+/// could set inconsistently.
+struct FilterSortView: View {
+    @Binding var filter: BookFilter
+    @Binding var sort: BookSort
+    let languages: [String]
+    @Environment(\.theme) private var theme
+
+    private enum ProgressFilter: String, CaseIterable {
+        case all = "All", unfinished = "Unfinished", finished = "Finished"
+    }
+
+    private var progressSelection: Binding<ProgressFilter> {
+        Binding(
+            get: {
+                if filter.finishedOnly { return .finished }
+                if filter.unfinishedOnly { return .unfinished }
+                return .all
+            },
+            set: { newValue in
+                filter.finishedOnly = newValue == .finished
+                filter.unfinishedOnly = newValue == .unfinished
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Sort").font(.caption.weight(.semibold)).foregroundStyle(theme.tertiaryText)
+                Picker("Sort", selection: $sort) {
+                    Text("Title").tag(BookSort.title)
+                    Text("Recently added").tag(BookSort.recentlyAdded)
+                    Text("Release year").tag(BookSort.releaseYear)
+                    Text("Publication year").tag(BookSort.publicationYear)
+                }
+                .labelsHidden()
+            }
+
+            if !languages.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Language").font(.caption.weight(.semibold)).foregroundStyle(theme.tertiaryText)
+                    Picker("Language", selection: $filter.language) {
+                        Text("Any").tag(String?.none)
+                        ForEach(languages, id: \.self) { language in
+                            Text(language).tag(String?.some(language))
+                        }
+                    }
+                    .labelsHidden()
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Progress").font(.caption.weight(.semibold)).foregroundStyle(theme.tertiaryText)
+                Picker("Progress", selection: progressSelection) {
+                    ForEach(ProgressFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Abridged only", isOn: $filter.abridgedOnly)
+                Toggle("Full cast or dramatized only", isOn: $filter.fullCastOrDramatizedOnly)
+                Toggle("Downloaded only", isOn: $filter.downloadedOnly)
+            }
+            .toggleStyle(.checkbox)
+
+            if filter.isActive || sort != .title {
+                Button("Reset") {
+                    filter = BookFilter()
+                    sort = .title
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.accent)
+            }
+        }
+        .padding(16)
+    }
+}
+
 struct BookTile: View {
     let book: BookRecord
     @Environment(AppModel.self) private var app
@@ -609,6 +763,35 @@ struct BookTile: View {
             CoverImage(thumb: book.thumb)
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(.rect(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    // Language, when known — most valuable for a library that
+                    // genuinely mixes languages; harmless repetition otherwise.
+                    if let language = book.language {
+                        cornerBadge(text: languageAbbreviation(language))
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    // Abridged and a notable production type can both apply to
+                    // the same book at once, so this stacks rather than picks
+                    // one — an edge case, but a silently-dropped badge would be
+                    // a worse one. Neither is inferred from anything: absence
+                    // of a tag is not evidence of the ordinary case, matching
+                    // the contract's own rule for both fields.
+                    VStack(alignment: .trailing, spacing: 3) {
+                        if book.edition == "Abridged" {
+                            cornerIcon("scissors")
+                        }
+                        if let production = book.productionType,
+                           ["Full cast", "Dramatized"].contains(production) {
+                            cornerIcon("theatermasks")
+                        }
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if app.finishedKeys.contains(book.ratingKey) {
+                        cornerIcon("checkmark")
+                    }
+                }
                 // Downloaded, on the cover. Whether a book is on the device was
                 // answerable only by opening it, which in a library of hundreds
                 // means opening hundreds.
@@ -626,10 +809,54 @@ struct BookTile: View {
                 Text(author).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }
-        // The badge is hidden from VoiceOver and said here instead, where it
-        // joins the title rather than interrupting it as an unnamed image.
+        // Every badge above is hidden from VoiceOver and said here instead,
+        // where each joins the title rather than interrupting it as a set of
+        // unnamed images read out of order.
         .accessibilityElement(children: .combine)
-        .accessibilityValue(app.downloadedKeys.contains(book.ratingKey) ? "Downloaded" : "")
+        .accessibilityValue(accessibilityBadgeSummary)
+    }
+
+    private var accessibilityBadgeSummary: String {
+        var parts: [String] = []
+        if let language = book.language { parts.append(language) }
+        if book.edition == "Abridged" { parts.append("Abridged") }
+        if let production = book.productionType,
+           ["Full cast", "Dramatized"].contains(production) {
+            parts.append(production)
+        }
+        if app.finishedKeys.contains(book.ratingKey) { parts.append("Finished") }
+        if app.downloadedKeys.contains(book.ratingKey) { parts.append("Downloaded") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// First two letters, uppercased — not a real ISO code, since VocalisMeta
+    /// sends a full name ("Swedish") rather than one to look up, and mapping
+    /// arbitrary language names to codes would need a lookup table this badge
+    /// isn't worth building one for. Good enough to tell two languages apart
+    /// on a cover; the full name is one tap away on the book detail screen.
+    private func languageAbbreviation(_ language: String) -> String {
+        String(language.prefix(2)).uppercased()
+    }
+
+    private func cornerBadge(text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(.black.opacity(0.55), in: .rect(cornerRadius: 4))
+            .padding(6)
+            .accessibilityHidden(true)
+    }
+
+    private func cornerIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(4)
+            .background(.black.opacity(0.55), in: .circle)
+            .padding(4)
+            .accessibilityHidden(true)
     }
 }
 
@@ -871,13 +1098,16 @@ enum SidebarItem: Hashable {
     case home
     case allBooks
     case authors
+    case narrators
     case series
     case genres
     case downloads
     case history
     case authorDetail(String)
+    case narratorDetail(String)
     case seriesDetail(String)
     case genreDetail(String)
+    case contributorDetail(key: String, displayName: String)
     case book(ratingKey: String, title: String)
 
     /// What a breadcrumb crumb says for this step, and what the back button
@@ -887,13 +1117,16 @@ enum SidebarItem: Hashable {
         case .home: "Home"
         case .allBooks: "Books"
         case .authors: "Authors"
+        case .narrators: "Narrators"
         case .series: "Series"
         case .genres: "Genres"
         case .downloads: "Downloads"
         case .history: "History"
         case .authorDetail(let name): name
+        case .narratorDetail(let name): name
         case .seriesDetail(let name): name
         case .genreDetail(let name): name
+        case .contributorDetail(_, let displayName): displayName
         case .book(_, let title): title
         }
     }

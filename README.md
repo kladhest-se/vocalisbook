@@ -111,6 +111,16 @@ know: the agent does not know how long a series is. For a library no agent has
 matched, Plex collections supply the order instead. Finishing book thirty-two
 should not be a dead end.
 
+**Browse by writer, and by narrator.** Writers are the people the metadata agent
+credits, and only those. Plex models an author as the album's artist, which for
+an audiobook is whatever the files were tagged with — very often the narrator,
+or a writer and a narrator joined with a comma — so a list built from it is a
+list of writers with other people in it, and the same writer in it twice. A book
+the agent has not matched has no writer and appears under nobody, which is a
+metadata problem with a metadata fix. Narrators come from `Style`, where the
+agent puts them, and a name is enough: where it also supplies a stable
+identifier, two spellings of one reader are one person rather than two.
+
 **Browse by series.** Every series in the library, with its books in reading
 order — including the novellas numbered 3.5, which sort where they belong rather
 than being rounded away.
@@ -235,19 +245,25 @@ stretched. Not a split view: Home is content, and content in a sidebar is a
 screen squeezed into a column beside an empty pane. The player turns on its side
 when the screen is wider than it is tall — landscape on a
 phone, either orientation on an iPad — with the cover beside the controls rather
-than above them. Five tabs — Home, Browse, Authors, Series and Genres — five ways
-of looking at the same library, and what of it is on the phone. Collections is
+than above them. Three tabs — Home, Books and Browse. Books is the whole library
+as a grid, every cover at once; Browse is the indexes into it, and tapping its
+title opens a menu — writers, narrators, series, genres — rather than spending a
+tab on each. Those were three tabs of the five iOS allows, and they were the
+same screen three times: a list of names with a cover and a count, differing
+only in which table the names came from. Narrators made a fourth, hidden behind
+a segmented control because a sixth tab would have fallen into iOS's own
+system-drawn "More" screen, which the app's theme cannot reach. Collections is
 not one of them for now — deferred rather than built halfway, and may return in
-a later release. A toggle beside search in Browse narrows the grid to what is
+a later release. A toggle beside search in Books narrows the grid to what is
 already on the device, independent of offline mode; managing what is
 downloaded — sizes, removing things, watching a transfer — is a level inside
-Settings, next to the total it reports. Settings, the account and the
-offline switch are in the toolbar, on every tab: five tabs is also what keeps
-iOS from bucketing anything into its own system-drawn "More" screen, which the
-app's theme cannot reach.
+Settings, next to the total it reports. Settings, the account and the offline
+switch are in the toolbar, on every tab.
 
-**Mac** — the same five sections as the other platforms, as sidebar rows rather
-than tabs, plus Downloads and History, with the transport docked at the bottom of
+**Mac** — the same sections, as sidebar rows rather than tabs. A sidebar has
+room the phone's tab bar does not, so authors, narrators, series and genres each
+keep a row of their own rather than folding behind a menu. Downloads and History
+sit alongside them, with the transport docked at the bottom of
 the window. Browsing into a specific author, series or genre — and from there
 into a book — keeps a trail rather than forgetting it the moment you open
 something: a back button steps up one level at a time, and a row of
@@ -355,6 +371,37 @@ the contract's published test vectors are covered by tests in
 A library matched by another agent, or by none, still works: everything above
 degrades to what Plex itself provides, and the per-server fallback identity
 carries progress exactly as far as it can honestly go.
+
+The contract's v2 and v3 additions are supported too, and are optional in
+exactly the same way v1's fields always were: absent tags mean absent data,
+never a guess. Six more namespaces are recognised in `Mood` — `Work-ID:`,
+`Contributor-ID:`, `Work-Published:`, `Production:`, `Rating-Source:` and
+`Rating-Count:` — decoded in `PlexBook` alongside the v1 fields and covered
+by the same reserved-namespace guarantee: none of the six can ever appear as
+a phantom author, whether or not the agent supplying them has been updated.
+
+Two of the six get their own type rather than a plain string, and
+deliberately not by accident. `WorkIdentity` groups editions of the same
+literary work — an abridgment beside its unabridged twin — and is kept
+structurally apart from `BookIdentity`: a work identity answers "what other
+recordings exist," a book identity answers "whose progress is whose," and
+conflating the two would mean finishing one narrator's take marks a
+different narrator's recording finished too. `ContributorIdentity` keys an
+author or narrator by `spokenmeta:contributor:<role>:<source>:<identifier>`
+rather than by display name, for the same reason `BookIdentity` exists at
+all — two people can share a name, and one person's name can be spelled two
+ways across editions, so nothing that groups by contributor is allowed to
+compare names instead of keys.
+
+Both are grouping relationships only, never sync keys — progress, bookmarks,
+completion and downloads stay exactly where `BookIdentity` already puts
+them, on every screen this enables: an "Other Editions" list on the book
+detail screen, a page per contributor reached from a new "Contributors"
+section there, production type and rating shown beside the edition line
+already there, and a per-book metadata diagnostics screen that reads a
+fresh copy of a book's current Plex metadata directly — not the local cache
+— specifically so it can answer "what is the agent actually sending" without
+the question of whether this device's cache is stale.
 
 ## Layout
 

@@ -9,6 +9,7 @@ struct BookDetailView: View {
     @Environment(\.theme) private var theme
     @State private var model = BookDetailModel()
     @State private var nextBook: String?
+    @State private var contributorRoute: ContributorRoute?
 
     var body: some View {
         ScrollView {
@@ -49,6 +50,14 @@ struct BookDetailView: View {
                     // Only when known: absence means unknown.
                     if let edition = model.credits.editionLine {
                         Text(edition)
+                            .font(.callout)
+                            .foregroundStyle(theme.tertiaryText)
+                    }
+                    // Production and rating, from the same v2/v3 Mood
+                    // namespaces as edition and language — absent just as
+                    // often, and shown the same way when it is not.
+                    if let production = model.credits.productionLine {
+                        Text(production)
                             .font(.callout)
                             .foregroundStyle(theme.tertiaryText)
                     }
@@ -182,7 +191,7 @@ struct BookDetailView: View {
                                 .frame(width: 80, height: 80)
                                 .clipShape(.rect(cornerRadius: 8))
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Next in \(next.seriesTitle)")
+                                Text(next.caption)
                                     .font(.caption)
                                     .foregroundStyle(theme.secondaryText)
                                 Text(next.book.title).font(.headline).lineLimit(1)
@@ -193,12 +202,82 @@ struct BookDetailView: View {
                     .buttonStyle(.card)
                 }
 
+                if !model.otherEditions.isEmpty {
+                    Text("Other Editions").font(.headline)
+                    ForEach(model.otherEditions, id: \.ratingKey) { edition in
+                        // Same reasoning as "Next in series" above: bound to
+                        // this view's own `nextBook` rather than a
+                        // `NavigationLink(value:)`, since this screen is
+                        // reached from stacks that register different value
+                        // types.
+                        Button {
+                            nextBook = edition.ratingKey
+                        } label: {
+                            HStack(spacing: 16) {
+                                CoverImage(thumb: edition.thumb)
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(.rect(cornerRadius: 8))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(edition.title).font(.headline).lineLimit(1)
+                                    if let editionLabel = edition.edition {
+                                        Text(editionLabel)
+                                            .font(.caption)
+                                            .foregroundStyle(theme.secondaryText)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .buttonStyle(.card)
+                    }
+                }
+
+                if !model.credits.contributors.isEmpty {
+                    Text("Contributors").font(.headline)
+                    // A row per contributor, matching "Other Editions" above,
+                    // rather than inline text: only some of the authors and
+                    // narrators already shown higher up have a stable key at
+                    // all, and mixing tappable and plain names inside one
+                    // flowing sentence would leave no honest way to show
+                    // which is which.
+                    ForEach(model.credits.contributors, id: \.contributorKey) { contributor in
+                        Button {
+                            contributorRoute = ContributorRoute(
+                                key: contributor.contributorKey, displayName: contributor.displayName
+                            )
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: contributor.role == "narrator" ? "waveform" : "person")
+                                    .frame(width: 32)
+                                    .foregroundStyle(theme.secondaryText)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(contributor.displayName).font(.headline).lineLimit(1)
+                                    Text(contributor.role.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(theme.secondaryText)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .buttonStyle(.card)
+                    }
+                }
+
                 if !model.chapters.isEmpty {
                         NavigationLink {
                             ChapterListView(ratingKey: ratingKey, model: model)
                         } label: {
                             Label("Chapters (\(model.chapters.count))", systemImage: "list.bullet")
                         }
+                    }
+
+                    NavigationLink {
+                        MetadataDiagnosticsView(
+                            ratingKey: ratingKey,
+                            chapterSource: model.chapters.first?.source
+                        )
+                    } label: {
+                        Label("Metadata Diagnostics", systemImage: "wrench.and.screwdriver")
                     }
 
                     if let summary = model.book?.summary, !summary.isEmpty {
@@ -217,10 +296,16 @@ struct BookDetailView: View {
             await model.load(app: app, ratingKey: ratingKey)
             model.reloadBookmarks(app: app, ratingKey: ratingKey)
         }
+        .onChange(of: app.libraryRevision) { _, _ in
+            Task { await model.load(app: app, ratingKey: ratingKey) }
+        }
         // Added from the player, which is a different screen. Without this the
         // list would be whatever it was when this one opened.
         // Pushed by this view, so it does not depend on which stack opened it.
         .navigationDestination(item: $nextBook) { BookDetailView(ratingKey: $0) }
+        .navigationDestination(item: $contributorRoute) {
+            ContributorBooksView(contributorKey: $0.key, displayName: $0.displayName)
+        }
         // Asked once, with both answers spelled out.
         //
         // No default and nothing preselected: further along is usually right and
@@ -317,6 +402,15 @@ struct ChapterListView: View {
         }
         .background(theme.background.ignoresSafeArea())
     }
+}
+
+/// A contributor's key and display name together, for
+/// `.navigationDestination(item:)` — matching `BookRoute` in `AuthorsView.swift`,
+/// which exists for the identical reason: a bare `String` is already another
+/// route in play elsewhere in this stack.
+struct ContributorRoute: Hashable {
+    let key: String
+    let displayName: String
 }
 
 @MainActor
@@ -427,6 +521,11 @@ final class BookDetailModel {
     }
     private(set) var next: NextInSeries?
 
+    /// Other recordings of the same work — an abridgment beside its
+    /// unabridged twin, a re-recording, a different narrator's take.
+    /// Grouping only; nothing here touches this book's own progress.
+    private(set) var otherEditions: [BookRecord] = []
+
     var durationText: String? {
         guard let ms = book?.durationMs, ms > 0 else { return nil }
         return Format.duration(ms: ms)
@@ -493,6 +592,9 @@ final class BookDetailModel {
         timeline = try? app.library.timeline(bookRatingKey: ratingKey)
         credits = (try? app.library.credits(bookRatingKey: ratingKey)) ?? BookCredits()
         standing = try? app.library.standing(ofBook: ratingKey)
+        otherEditions = credits.workIdentity.flatMap {
+            try? app.library.otherEditions(ofWork: $0, excluding: ratingKey)
+        } ?? []
 
         // Tracks are only fetched when a book is opened. Prefetching them for
         // a few thousand books would be thousands of requests for data almost

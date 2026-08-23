@@ -69,6 +69,29 @@ struct HomeView: View {
                         section("Recently added", books: model.recentlyAdded)
                     }
 
+                    // Distinct from "Recently added" above: this is about
+                    // when the agent last had something new to say about a
+                    // book, not when it joined the library.
+                    if !model.recentlyUpdated.isEmpty {
+                        section("Recently updated", books: model.recentlyUpdated)
+                    }
+
+                    if !model.unabridged.isEmpty {
+                        section("Unabridged", books: model.unabridged)
+                    }
+
+                    if !model.fullCastOrDramatized.isEmpty {
+                        section("Full Cast & Dramatized", books: model.fullCastOrDramatized)
+                    }
+
+                    if !model.shortListens.isEmpty {
+                        section("Short Listens", books: model.shortListens)
+                    }
+
+                    if !model.longListens.isEmpty {
+                        section("Long Listens", books: model.longListens)
+                    }
+
                     if model.isEmpty {
                         ContentUnavailableView(
                             "Nothing here yet",
@@ -152,6 +175,16 @@ final class HomeModel {
     private(set) var inProgress: [BookRecord] = []
     private(set) var recentlyAdded: [BookRecord] = []
 
+    /// Books whose metadata changed most recently — see
+    /// `LibraryStore.recentlyUpdated` for why this is not the same list as
+    /// `recentlyAdded`.
+    private(set) var recentlyUpdated: [BookRecord] = []
+
+    private(set) var unabridged: [BookRecord] = []
+    private(set) var fullCastOrDramatized: [BookRecord] = []
+    private(set) var shortListens: [BookRecord] = []
+    private(set) var longListens: [BookRecord] = []
+
     /// Books finished, most recently first.
     ///
     /// The other end of Continue listening. That list is what is in progress and
@@ -166,7 +199,8 @@ final class HomeModel {
     /// has no books in progress and nothing newly added, and would have shown
     /// the "nothing here yet" message above a screen full of finished books.
     var isEmpty: Bool {
-        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty
+        inProgress.isEmpty && recentlyAdded.isEmpty && recentlyFinished.isEmpty && recentlyUpdated.isEmpty
+            && unabridged.isEmpty && fullCastOrDramatized.isEmpty && shortListens.isEmpty && longListens.isEmpty
     }
 
     /// The list as shown: the observed rows, minus the one being played.
@@ -205,7 +239,12 @@ final class HomeModel {
         // memory of a database that no longer held any of it.
         guard let library = app.library, let sectionID = app.sectionID else {
             recentlyAdded = []
+            recentlyUpdated = []
             recentlyFinished = []
+            unabridged = []
+            fullCastOrDramatized = []
+            shortListens = []
+            longListens = []
             stats = nil
             return
         }
@@ -215,7 +254,12 @@ final class HomeModel {
         // The in-progress list is not read here: it is observed, and arrives on
         // its own. This is for the parts that only change when the library does.
         recentlyAdded = (try? library.recentlyAdded(sectionID: sectionID, limit: 12)) ?? []
+        recentlyUpdated = (try? library.recentlyUpdated(sectionID: sectionID, limit: 12)) ?? []
         recentlyFinished = (try? library.recentlyFinished(limit: 12)) ?? []
+        unabridged = (try? library.unabridged(sectionID: sectionID, limit: 12)) ?? []
+        fullCastOrDramatized = (try? library.fullCastOrDramatized(sectionID: sectionID, limit: 12)) ?? []
+        shortListens = (try? library.shortListens(sectionID: sectionID, limit: 12)) ?? []
+        longListens = (try? library.longListens(sectionID: sectionID, limit: 12)) ?? []
         stats = try? app.sessions.stats(sectionID: app.sectionID)
     }
 }

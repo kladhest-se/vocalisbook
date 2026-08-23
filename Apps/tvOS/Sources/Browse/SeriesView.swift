@@ -172,11 +172,11 @@ struct SeriesBooksView: View {
     }
 
     private func reload() {
-        guard let library = app.library else {
+        guard let library = app.library, let sectionID = app.sectionID else {
             entries = []
             return
         }
-        entries = (try? library.books(inSeries: series)) ?? []
+        entries = (try? library.books(inSeries: series, sectionID: sectionID)) ?? []
     }
 }
 

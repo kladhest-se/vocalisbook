@@ -4,8 +4,11 @@ import PlatformShared
 
 /// Authors, from the cache.
 ///
-/// Plex models the author as the album artist, so it is already on every book
-/// row — this needs no network and works offline like the rest of browsing.
+/// From `book_author` — the writers the metadata agent credited — and not from
+/// Plex's album artist, which for an audiobook is as often the narrator as the
+/// writer. Cached either way, so this needs no network and works offline like
+/// the rest of browsing. A book the agent has not matched has no writer and
+/// appears here under nobody.
 ///
 /// A grid of cards, not a table. It was a `List` of names with a cover and a
 /// count, which told you nothing until you clicked one — the covers were
@@ -137,6 +140,53 @@ struct AuthorBooksView: View {
                 return
             }
             books = (try? library.books(byAuthor: author, sectionID: sectionID, downloadedOnly: app.isOffline)) ?? []
+        }
+    }
+}
+
+/// Everything credited to one contributor, by their stable key.
+///
+/// Modeled directly on `AuthorBooksView` beside it — same grid, same
+/// loading, same offline handling. The one difference is the lookup: this
+/// reads `book_contributor` by key rather than `book`/`book_author` by name,
+/// so a corrected or retranslated display name never drops a book from the
+/// list, and two people who happen to share a name are never merged onto
+/// one page.
+struct ContributorBooksView: View {
+    let contributorKey: String
+    let displayName: String
+    let open: (String, String) -> Void
+    @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
+    @State private var books: [BookRecord] = []
+
+    private let columns = [GridItem(.adaptive(minimum: 110, maximum: 160), spacing: 16)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(books, id: \.ratingKey) { book in
+                    Button {
+                        open(book.ratingKey, book.title)
+                    } label: {
+                        BookTile(book: book)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+            .padding(.bottom, 20)
+        }
+        .background(theme.background.ignoresSafeArea())
+        .navigationTitle(displayName)
+        .task {
+            guard let library = app.library, let sectionID = app.sectionID else {
+                books = []
+                return
+            }
+            books = (try? library.books(
+                byContributor: contributorKey, sectionID: sectionID, downloadedOnly: app.isOffline
+            )) ?? []
         }
     }
 }

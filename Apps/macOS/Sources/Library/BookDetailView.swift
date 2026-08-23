@@ -8,6 +8,7 @@ struct BookDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.theme) private var theme
     @State private var model = BookDetailModel()
+    @State private var showingDiagnostics = false
 
     var body: some View {
         ScrollView {
@@ -50,6 +51,14 @@ struct BookDetailView: View {
                         // Only when known: absence means unknown.
                         if let edition = model.credits.editionLine {
                             Text(edition)
+                                .font(.callout)
+                                .foregroundStyle(.tertiary)
+                        }
+                        // Production and rating, from the same v2/v3 Mood
+                        // namespaces as edition and language — absent just as
+                        // often, and shown the same way when it is not.
+                        if let production = model.credits.productionLine {
+                            Text(production)
                                 .font(.callout)
                                 .foregroundStyle(.tertiary)
                         }
@@ -141,7 +150,7 @@ if PlatformCapabilities.localStoreIsDurable {
                                 .frame(width: 44, height: 44)
                                 .clipShape(.rect(cornerRadius: 6))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Next in \(next.seriesTitle)")
+                                Text(next.caption)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Text(next.book.title).font(.callout).lineLimit(1)
@@ -154,6 +163,74 @@ if PlatformCapabilities.localStoreIsDurable {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                }
+
+                if !model.otherEditions.isEmpty {
+                    Text("Other Editions").font(.headline)
+                    ForEach(model.otherEditions, id: \.ratingKey) { edition in
+                        // A button rather than a link, matching "Next in
+                        // series" above: the detail pane is driven by
+                        // `LibraryView`'s selection and nothing inside it
+                        // can push.
+                        Button {
+                            app.open(bookRatingKey: edition.ratingKey)
+                        } label: {
+                            HStack(spacing: 12) {
+                                CoverImage(thumb: edition.thumb)
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(.rect(cornerRadius: 6))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(edition.title).font(.callout).lineLimit(1)
+                                    if let edition = edition.edition {
+                                        Text(edition)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if !model.credits.contributors.isEmpty {
+                    Text("Contributors").font(.headline)
+                    // A row per contributor, matching "Other Editions" above,
+                    // rather than inline text: only some of the authors and
+                    // narrators already shown higher up have a stable key at
+                    // all, and mixing tappable and plain names inside one
+                    // flowing sentence would leave no honest way to show
+                    // which is which. Listed here separately instead of
+                    // trying to retrofit tappability onto "With X, Y" and
+                    // "Read by X" above.
+                    ForEach(model.credits.contributors, id: \.contributorKey) { contributor in
+                        Button {
+                            app.open(contributor: contributor.contributorKey, displayName: contributor.displayName)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: contributor.role == "narrator" ? "person.wave.2" : "person")
+                                    .frame(width: 20)
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(contributor.displayName).font(.callout)
+                                    Text(contributor.role.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 if !model.chapters.isEmpty {
@@ -245,6 +322,9 @@ if PlatformCapabilities.localStoreIsDurable {
                  + "Whichever you choose is kept; the other is discarded.")
         }
         .task(id: ratingKey) { await model.load(app: app, ratingKey: ratingKey) }
+        .onChange(of: app.libraryRevision) { _, _ in
+            Task { await model.load(app: app, ratingKey: ratingKey) }
+        }
         .overlay { if model.isLoading && model.book == nil { ProgressView() } }
         // Found in the same audit that fixed this exact gap on this view's
         // iOS sibling: every color here already reads from `theme`, but
@@ -252,6 +332,27 @@ if PlatformCapabilities.localStoreIsDurable {
         // Books sidebar row — fell back to the system default regardless of
         // which theme was active.
         .background(theme.background.ignoresSafeArea())
+        .toolbar {
+            // A wrench rather than a bug: this is a live look at what the
+            // agent sent, not a report a user files. Available on every
+            // book rather than gated behind a settings toggle — the app
+            // ships to one person's own server, not a general audience a
+            // developer tool needs hiding from.
+            ToolbarItem {
+                Button {
+                    showingDiagnostics = true
+                } label: {
+                    Image(systemName: "wrench.and.screwdriver")
+                }
+                .help("Metadata diagnostics")
+            }
+        }
+        .sheet(isPresented: $showingDiagnostics) {
+            MetadataDiagnosticsView(
+                ratingKey: ratingKey,
+                chapterSource: model.chapters.first?.source
+            )
+        }
     }
 }
 
@@ -357,6 +458,11 @@ final class BookDetailModel {
     }
     private(set) var next: NextInSeries?
 
+    /// Other recordings of the same work — an abridgment beside its
+    /// unabridged twin, a re-recording, a different narrator's take.
+    /// Grouping only; nothing here touches this book's own progress.
+    private(set) var otherEditions: [BookRecord] = []
+
     var durationText: String? {
         guard let ms = book?.durationMs, ms > 0 else { return nil }
         return Format.duration(ms: ms)
@@ -423,6 +529,9 @@ final class BookDetailModel {
         timeline = try? app.library.timeline(bookRatingKey: ratingKey)
         credits = (try? app.library.credits(bookRatingKey: ratingKey)) ?? BookCredits()
         standing = try? app.library.standing(ofBook: ratingKey)
+        otherEditions = credits.workIdentity.flatMap {
+            try? app.library.otherEditions(ofWork: $0, excluding: ratingKey)
+        } ?? []
 
         // Tracks are fetched only when a book is opened. Prefetching them for a
         // few thousand books would be thousands of requests for data almost none

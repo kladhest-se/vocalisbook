@@ -111,6 +111,9 @@ struct MainTabs: View {
             AuthorsView()
                 .tabItem { Label("Authors", systemImage: "person") }
                 .tag(MainTab.authors)
+            NarratorsView()
+                .tabItem { Label("Narrators", systemImage: "waveform") }
+                .tag(MainTab.narrators)
             SeriesView()
                 .tabItem { Label("Series", systemImage: "square.stack") }
                 .tag(MainTab.series)
@@ -161,5 +164,5 @@ struct MainTabs: View {
 /// Pressing play jumps straight to the player rather than leaving you on the
 /// book screen wondering whether anything happened.
 enum MainTab: Hashable {
-    case home, books, authors, series, genres, history, settings, nowPlaying
+    case home, books, authors, narrators, series, genres, history, settings, nowPlaying
 }

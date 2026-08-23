@@ -191,6 +191,14 @@ struct BookIdentityTests {
             "com.plexapp.agents.spokenmeta://B08G9PRS1K_zz",   // marketplace unknown
             "com.plexapp.agents.spokenmeta://librivox:052",    // leading zero
             "com.plexapp.agents.spokenmeta://librivox:abc",    // not a number
+            // Empty, which used to pass: both remaining checks succeed
+            // vacuously on an empty string, and unlike the other three forms
+            // there is no length to fail. It produced `spokenmeta:librivox:`,
+            // which every truncated GUID in a library would have shared.
+            "com.plexapp.agents.spokenmeta://librivox:",
+            "com.plexapp.agents.spokenmeta://librivox:12٣",    // not ASCII digits
+            "com.plexapp.agents.spokenmeta://isbn:",           // empty
+            "com.plexapp.agents.spokenmeta://local:",          // empty
             "com.plexapp.agents.spokenmeta://isbn:123",        // not thirteen digits
             "com.plexapp.agents.spokenmeta://local:xyz",       // not sixteen hex
         ] {

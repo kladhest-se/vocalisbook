@@ -137,11 +137,13 @@ public struct LibrarySync: Sendable {
         pageSize: Int = 200,
         incremental: Bool = false,
         onPage: (@Sendable (Int, Int?) -> Void)? = nil,
-        onSeries: (@Sendable (Int, Int) -> Void)? = nil
+        onSeries: (@Sendable (Int, Int) -> Void)? = nil,
+        onDetailRefresh: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> Int {
         var offset = 0
         var total: Int?
         let startedAt = Date()
+        var needsFullRefresh: [String] = []
 
         let since = incremental ? try store.lastSynced(sectionID: sectionID) : nil
 
@@ -155,6 +157,13 @@ public struct LibrarySync: Sendable {
             )
             total = page.totalSize ?? total
             guard !page.metadata.isEmpty else { break }
+
+            // Checked against what is cached *before* this page overwrites it —
+            // afterwards the comparison would always agree, since the write
+            // just happened.
+            needsFullRefresh += (try? store.booksNeedingFullRefresh(
+                among: page.metadata.map { ($0.ratingKey, $0.updatedAt) }
+            )) ?? []
 
             try store.cacheBookList(page.metadata, sectionID: sectionID)
 
@@ -196,9 +205,34 @@ public struct LibrarySync: Sendable {
             _ = try? downloadStore.evictMissingFromLibrary()
         }
 
+        // Books whose `updatedAt` changed get their full detail re-fetched —
+        // the one place Series, Sequence, Work-ID, Contributor-ID and every
+        // other Mood-derived field actually arrive, since the list endpoint
+        // above never carries them regardless of how many times it is asked.
+        // Without this, a book's edition metadata only ever updates by being
+        // opened, and can go stale indefinitely otherwise.
+        //
+        // Capped rather than exhaustive: a library-wide re-match on the agent
+        // side could otherwise turn one sync into hundreds of sequential
+        // requests. A capped, steady catch-up across however many syncs it
+        // takes is a better trade than one sync that hangs.
+        let capped = Array(needsFullRefresh.prefix(Self.maxDetailRefreshesPerSync))
+        for (index, ratingKey) in capped.enumerated() {
+            try Task.checkCancellation()
+            _ = try? await refreshBook(ratingKey: ratingKey)
+            onDetailRefresh?(index + 1, capped.count)
+        }
+
         try store.markSynced(sectionID: sectionID, at: startedAt)
         return offset
     }
+
+    /// However many changed books one sync will chase down with a full detail
+    /// fetch before leaving the rest for next time. See the comment where
+    /// this is used for why exhaustive was the wrong default.
+    private static let maxDetailRefreshesPerSync = 50
+
+
 
 
     /// Pulls the section's collections and their membership into the store.
@@ -573,4 +607,31 @@ public enum SyncError: Error, Sendable, Equatable {
     /// file. Retry later — do not cache a partial timeline.
     case metadataIncomplete(ratingKey: String)
     case timelineMissing(ratingKey: String)
+}
+
+extension SyncError: LocalizedError {
+    /// Neither case had a message before this — a plain `enum Error` bridges
+    /// to a generic NSError description, which is exactly the unhelpful
+    /// "the operation couldn't be completed" text a real, explainable
+    /// failure (Plex simply hasn't finished analysing a newly-added file
+    /// yet) should never surface as. This became reachable from the
+    /// diagnostics screen's "Reload from Plex" action, a genuine
+    /// user-facing failure mode, not only an internal sync detail.
+    public var errorDescription: String? {
+        switch self {
+        case .metadataIncomplete:
+            return "Plex hasn't finished analyzing this book's audio files yet."
+        case .timelineMissing:
+            return "This book's playback timeline isn't available yet."
+        }
+    }
+
+    public var failureReason: String? {
+        switch self {
+        case .metadataIncomplete:
+            return "Try again in a moment — this usually resolves once Plex finishes scanning the file."
+        case .timelineMissing:
+            return nil
+        }
+    }
 }

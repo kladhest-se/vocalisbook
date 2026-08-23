@@ -246,6 +246,7 @@ final class AppModel {
             database = try StoreLocation.open()
             library = LibraryStore(database: database)
             refreshDownloadedKeys()
+            refreshFinishedKeys()
 
             // Without this, CloudKit's silent pushes are never delivered and the
             // sync engine only learns about other devices when it next starts.
@@ -1058,7 +1059,20 @@ final class AppModel {
     /// A named method also says what happened. `libraryRevision += 1` at a call
     /// site says how the signal is implemented and leaves the reader to infer
     /// why.
-    func libraryChanged() { libraryRevision += 1 }
+    func libraryChanged() {
+        libraryRevision += 1
+        refreshFinishedKeys()
+    }
+
+    /// Same shape as `downloadedKeys`, and refreshed the same general way:
+    /// rather than hunting down every specific place finished state can
+    /// change, this rides `libraryChanged()` — already the established
+    /// signal for exactly this, per the comment above.
+    private(set) var finishedKeys: Set<String> = []
+
+    func refreshFinishedKeys() {
+        finishedKeys = (try? library?.finishedBookKeys()) ?? []
+    }
 
     /// What the app is busy doing, in a sentence somebody can read.
     ///

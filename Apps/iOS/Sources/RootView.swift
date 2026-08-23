@@ -202,9 +202,7 @@ struct MainTabs: View {
         switch item {
         case .home: home.miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .books: LibraryView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .authors: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .series: SeriesView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .genres: GenresView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
+        case .browse: BrowseView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         }
     }
 
@@ -472,30 +470,33 @@ extension View {
 /// Only so a tab can be brought forward from elsewhere — the bar itself works
 /// without it.
 enum MainTab: Hashable, CaseIterable {
-    // Genres sits after Series: both are ways of grouping the same books, and
-    // this is the one that groups by what a book *is* rather than where it
-    // sits in a reading order.
+    // Authors, Series and Genres were three tabs and are now one. They were
+    // three lists of names with a cover and a count, differing only in which
+    // table the names came from, and spending three of the five tabs iOS
+    // allows on that left no room for anything else. `BrowseView` holds all
+    // four of them — narrators included, which used to hide behind a
+    // segmented control inside Authors — behind a menu on the navigation
+    // title.
     //
-    // Collections and Downloads used to be tabs here. Collections is folded
-    // into Books as a filter — one of the ways of narrowing the same grid,
-    // not a separate way of looking at the library — and Downloads moved to a
-    // toolbar button beside Settings, storage management rather than
-    // browsing. Five tabs rather than seven is also what keeps iOS from
-    // bucketing the last few into its own unthemed "More" screen, which only
-    // ever appears past five.
+    // Collections and Downloads used to be tabs here too. Collections is
+    // folded into Books as a filter — one of the ways of narrowing the same
+    // grid, not a separate way of looking at the library — and Downloads
+    // moved to a toolbar button beside Settings, storage management rather
+    // than browsing.
     //
-    // Named `books` rather than `browse`: this tab is specifically the full
-    // library grid, and "browse" described the action rather than the
-    // content — every other tab is just as much a way of browsing.
-    case home, books, authors, series, genres
+    // The distinction that named `books` rather than `browse` still holds,
+    // and is now the distinction between the two tabs: Books is the full
+    // library grid, every book at once; Browse is the indexes into it. Three
+    // tabs is well clear of the five past which iOS buckets the remainder
+    // into its own unthemed "More" screen, which is the constraint the old
+    // arrangement was permanently up against.
+    case home, books, browse
 
     var title: String {
         switch self {
         case .home: "Home"
         case .books: "Books"
-        case .authors: "Authors"
-        case .series: "Series"
-        case .genres: "Genres"
+        case .browse: "Browse"
         }
     }
 
@@ -508,9 +509,11 @@ enum MainTab: Hashable, CaseIterable {
         // the books" and "books grouped by series", which stopped being
         // clear the moment the tab was actually named Books outright.
         case .books: "books.vertical"
-        case .authors: "person"
-        case .series: "square.stack"
-        case .genres: "theatermasks"
+        // A list against a shelf of books. The two tabs hold the same
+        // library and the icons say how it is arranged: covers laid out, or
+        // names to read down. A second grid icon here would have said they
+        // were the same screen twice.
+        case .browse: "list.bullet"
         }
     }
 }

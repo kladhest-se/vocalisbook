@@ -12,6 +12,14 @@ import PlexKit
 @Suite("Authors")
 struct AuthorsTests {
 
+    /// Seeds one book per entry, crediting `author` both ways.
+    ///
+    /// `parentTitle` *and* a bare `Mood`, because those are two different
+    /// claims: the first is whatever the files were tagged with, the second is
+    /// the metadata agent naming a writer. Only the second builds this screen.
+    /// Passing an author here means "the agent credited this person", which is
+    /// what every test below is actually about; a book with an album artist and
+    /// no Mood is a different case, and `unmatchedBooksHaveNoWriter` covers it.
     private func seed(books: [(title: String, author: String?, thumb: String?)]) throws -> LibraryStore {
         let db = try AudiobookDatabase.inMemory()
 
@@ -33,7 +41,10 @@ struct AuthorsTests {
             var fields = """
             "ratingKey":"b\(index)","title":"\(entry.title)"
             """
-            if let author = entry.author { fields += ",\"parentTitle\":\"\(author)\"" }
+            if let author = entry.author {
+                fields += ",\"parentTitle\":\"\(author)\""
+                fields += ",\"Mood\":[{\"tag\":\"\(author)\"}]"
+            }
             if let thumb = entry.thumb { fields += ",\"thumb\":\"\(thumb)\"" }
 
             let book = try JSONDecoder().decode(PlexBook.self, from: Data("{\(fields)}".utf8))
@@ -66,7 +77,7 @@ struct AuthorsTests {
         #expect(authors.allSatisfy { $0.bookCount == 1 })
     }
 
-    @Test("Books with no author are left out entirely")
+    @Test("Books with no credited writer are left out entirely")
     func missingAuthors() throws {
         let store = try seed(books: [
             (title: "Anonymous", author: nil, thumb: "/a"),
@@ -192,10 +203,14 @@ struct AuthorsTests {
         #expect(gaiman.map(\.ratingKey) == ["900"])
     }
 
-    /// The primary author is normally also a Mood author, so the two sides of
-    /// the union overlap. Counting the book twice would say a writer has forty
-    /// books when they have twenty.
-    @Test("A book satisfying both sides is counted once")
+    /// A book credited once is counted once.
+    ///
+    /// This used to guard a `UNION` between the album artist and the Mood
+    /// authors, where a book normally satisfied both sides and counting it
+    /// twice would have said a writer has forty books when they have twenty.
+    /// The union is gone; the assertion is kept because the failure it catches
+    /// is not — duplicate rows in `book_author` would produce it just as well.
+    @Test("A book credited once is counted once")
     func noDoubleCounting() throws {
         let library = try seedTagged([
             (key: "900", artist: "Terry Pratchett", moods: ["Terry Pratchett"]),
@@ -207,6 +222,58 @@ struct AuthorsTests {
 
         let books = try library.books(byAuthor: "Terry Pratchett", sectionID: "srv:2")
         #expect(books.count == 1)
+    }
+
+    /// The reported bug, in the shape it was reported in.
+    ///
+    /// A library showed two Terry Pratchetts: one from the Mood tags, and one
+    /// reading "Terry Pratchett, Stephen Baxter" because that is what the files
+    /// carried as `ALBUMARTIST` and Plex made an artist of it verbatim. Nothing
+    /// normalises names, so the union treated the joined string as a third
+    /// person. Dropping the album artist is what fixes it — splitting on the
+    /// comma would not, since `Last, First` and `Jr.` both contain one.
+    @Test("The album artist is never a writer")
+    func albumArtistIsNotAWriter() throws {
+        let library = try seedTagged([
+            (
+                key: "900",
+                artist: "Terry Pratchett, Stephen Baxter",
+                moods: ["Terry Pratchett", "Stephen Baxter"]
+            ),
+        ])
+
+        let authors = try library.authors(sectionID: "srv:2")
+        #expect(authors.map(\.name) == ["Stephen Baxter", "Terry Pratchett"])
+
+        // Hoisted out of the macro: a throwing call inside one is reported
+        // against the expansion rather than the line.
+        let joined = try library.books(
+            byAuthor: "Terry Pratchett, Stephen Baxter", sectionID: "srv:2"
+        )
+        #expect(joined.isEmpty)
+
+        let pratchett = try library.books(byAuthor: "Terry Pratchett", sectionID: "srv:2")
+        #expect(pratchett.map(\.ratingKey) == ["900"])
+    }
+
+    /// The cost of the decision above, stated as a test rather than left to be
+    /// discovered.
+    ///
+    /// A book no agent has matched carries no Mood at all, so it has no writer
+    /// and appears under nobody. The album artist it does have is not consulted,
+    /// on the grounds that in an audiobook library that field is as likely to
+    /// name the narrator as the writer.
+    @Test("A book the agent has not matched has no writer")
+    func unmatchedBooksHaveNoWriter() throws {
+        let library = try seedTagged([
+            (key: "900", artist: "Jeremy Bobb", moods: []),
+        ])
+
+        let authors = try library.authors(sectionID: "srv:2")
+        #expect(authors.isEmpty)
+
+        let bobb = try library.books(byAuthor: "Jeremy Bobb", sectionID: "srv:2")
+        #expect(bobb.isEmpty)
     }
 
 }

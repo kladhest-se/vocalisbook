@@ -111,7 +111,11 @@ sign-in with the account below. Once signed in, the app lists the Plex
 servers visible to that account; select the test server and the library
 loads automatically.
 
-    Test account:  _email / password, to fill in_
+    Test account:  entered directly in App Store Connect's App Review
+                   Information (Sign-In Required) and in the review notes —
+                   not written here, since this file is pushed to a public
+                   GitHub repository and a real credential does not belong
+                   in version control.
     Test server:   _name, reachable without VPN or local network access_
     Test library:  audiobooks that are entirely public-domain or openly licensed
 
@@ -203,9 +207,20 @@ Publishable as-is at a URL of your choosing.
 
 ## Before pressing Upload
 
-- The version is 1.0.0 in `Config`, and `make <port>-archive` bumps the build
-  number and passes it to `xcodebuild archive` directly — Xcode's own Archive
-  action alone would carry the deliberate `1` sentinel instead.
+- The version in `Config` is 1.0.1 and matches the release being uploaded, and
+  CHANGELOG.md's top heading has been changed from `1.0.1 - Unreleased` to
+  `1.0.1 - <date>`. The heading is what says a version is no longer in progress;
+  the number in `Config` runs ahead of it during development, which is why this
+  step exists at all.
+
+  Named rather than written as `<version>`, deliberately: `layout.sh` reads
+  `MARKETING_VERSION` out of `Config/iOS.xcconfig` and checks that this file
+  says it. A placeholder passes review and fails the gate, and the gate is
+  right — a submission checklist that does not name the version being submitted
+  is a checklist somebody can follow while shipping the wrong one.
+- `make <port>-archive` bumps the build number and passes it to
+  `xcodebuild archive` directly — Xcode's own Archive action alone would carry
+  the deliberate `1` sentinel instead.
 - `make publish-all` passes, including the tests.
 - A real device has run the build, not only a simulator.
 - Sync has been checked between two devices — pause on one, and the other should

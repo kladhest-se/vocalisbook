@@ -4,8 +4,11 @@ import PlatformShared
 
 /// Authors, from the cache.
 ///
-/// Plex models the author as the album artist, so it is already on every book
-/// row — this needs no network and works offline like the rest of browsing.
+/// From `book_author` — the writers the metadata agent credited — and not from
+/// Plex's album artist, which for an audiobook is as often the narrator as the
+/// writer. Cached either way, so this needs no network and works offline like
+/// the rest of browsing. A book the agent has not matched has no writer and
+/// appears here under nobody.
 ///
 /// A grid of cards, not a list. It was a `List` of names with a count on the
 /// right, which is the shape this screen takes on the phone and the wrong shape
@@ -262,4 +265,73 @@ struct AuthorBooksView: View {
 /// whichever was declared last wins.
 struct BookRoute: Hashable {
     let ratingKey: String
+}
+
+/// Everything credited to one contributor, by their stable key.
+///
+/// Modeled directly on `AuthorBooksView` above — same heading-above-scroll
+/// layout, same grid, same `BookRoute` navigation. The one difference is the
+/// lookup: this reads `book_contributor` by key rather than `book`/
+/// `book_author` by name, so a corrected or retranslated display name never
+/// drops a book from the list, and two people who happen to share a name are
+/// never merged onto one page.
+struct ContributorBooksView: View {
+    let contributorKey: String
+    let displayName: String
+    @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
+    @State private var books: [BookRecord] = []
+
+    private let columns = [GridItem(.adaptive(minimum: 240, maximum: 300), spacing: 48)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text(displayName)
+                .font(.largeTitle.weight(.semibold))
+                .foregroundStyle(theme.text)
+                .lineLimit(2)
+                .padding(.horizontal, 16)
+                .padding(.top, 24)
+
+            ScrollView {
+                if !books.isEmpty {
+                    Text(books.count == 1 ? "1 book" : "\(books.count) books")
+                        .font(.title3)
+                        .foregroundStyle(theme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                }
+
+                LazyVGrid(columns: columns, spacing: 48) {
+                    ForEach(books, id: \.ratingKey) { book in
+                        NavigationLink(value: BookRoute(ratingKey: book.ratingKey)) {
+                            BookTile(book: book)
+                        }
+                        .buttonStyle(.card)
+                    }
+                }
+                .padding(20)
+                .padding(.bottom, 90)
+            }
+            .navigationDestination(for: BookRoute.self) { BookDetailView(ratingKey: $0.ratingKey) }
+            .overlay {
+                if books.isEmpty {
+                    ContentUnavailableView(
+                        "Nothing by this contributor",
+                        systemImage: "books.vertical",
+                        description: Text("The library may not have finished fetching.")
+                    )
+                }
+            }
+        }
+        .background(theme.background.ignoresSafeArea())
+        .task {
+            guard let library = app.library, let sectionID = app.sectionID else {
+                books = []
+                return
+            }
+            books = (try? library.books(byContributor: contributorKey, sectionID: sectionID)) ?? []
+        }
+    }
 }

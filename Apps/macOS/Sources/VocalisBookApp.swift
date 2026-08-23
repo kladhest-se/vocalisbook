@@ -108,6 +108,14 @@ struct VocalisBookApp: App {
     }
 }
 
+/// A contributor's key and display name, travelling together as one value so
+/// `AppModel.requestedContributor` has something `Equatable` to publish
+/// through `.onChange` — a bare tuple does not conform.
+public struct ContributorRequest: Equatable {
+    public let key: String
+    public let displayName: String
+}
+
 /// Root state.
 ///
 /// Deliberately the same shape as the iOS one — sign-in, server choice and
@@ -305,7 +313,25 @@ final class AppModel {
     /// A named method also says what happened. `libraryRevision += 1` at a call
     /// site says how the signal is implemented and leaves the reader to infer
     /// why.
-    func libraryChanged() { libraryRevision += 1 }
+    func libraryChanged() {
+        libraryRevision += 1
+        refreshFinishedKeys()
+    }
+
+    /// Same shape as `downloadedKeys` beside it, and refreshed the same
+    /// general way: rather than hunting down every specific place finished
+    /// state can change (the mark-finished button, resetting progress, a
+    /// remote device's completion arriving via sync) and remembering to
+    /// call a matching refresh at each one, this rides `libraryChanged()` —
+    /// already the established signal for exactly this, per the comment
+    /// on `libraryChanged` itself: "the mark-finished and reset actions on
+    /// the book screen needed to send it."
+    private(set) var finishedKeys: Set<String> = []
+
+    func refreshFinishedKeys() {
+        finishedKeys = (try? library?.finishedBookKeys()) ?? []
+    }
+
 
     /// What the app is busy doing, in a sentence somebody can read.
     ///
@@ -498,6 +524,11 @@ final class AppModel {
     /// Cleared once honoured, so selecting the same book twice in a row works.
     var requestedBook: String?
 
+    /// Same mechanism as `requestedBook`, for a contributor page: a book
+    /// detail screen has no direct access to `LibraryView.path`, so the
+    /// request goes here and `LibraryView` watches it the same way.
+    var requestedContributor: ContributorRequest?
+
     /// Which books are fully downloaded, for the badge on a cover.
     ///
     /// Held here rather than passed to every grid: tiles are drawn from several
@@ -512,6 +543,15 @@ final class AppModel {
 
     public func open(bookRatingKey: String) {
         requestedBook = bookRatingKey
+    }
+
+    /// Both the key and the display name travel together, rather than the key
+    /// alone: there is no cheap "look up a display name from a contributor
+    /// key" query, and the caller already has both — `BookDetailView` reads
+    /// them straight off the same `ContributorRecord` it is about to show a
+    /// row for.
+    public func open(contributor key: String, displayName: String) {
+        requestedContributor = ContributorRequest(key: key, displayName: displayName)
     }
 
     /// Bumped when a bookmark is added, renamed or removed.
@@ -544,6 +584,7 @@ final class AppModel {
             database = try StoreLocation.open()
             library = LibraryStore(database: database)
             refreshDownloadedKeys()
+            refreshFinishedKeys()
 
             // Without this, CloudKit's silent pushes are never delivered and the
             // sync engine only learns about other devices when it next starts.
@@ -1374,8 +1415,13 @@ struct AccountCommands: Commands {
         // A menu of their own, because they are not playback and there is
         // nowhere else they belong.
         CommandMenu("Library") {
+            // Disabled while offline rather than left enabled and silently
+            // doing nothing — same reasoning as the toolbar's refresh
+            // button. A greyed-out item next to "Go Online" in the same menu
+            // is self-explanatory in a way a silent no-op never was.
             Button("Refresh Library") { app.libraryRefreshRequested += 1 }
                 .keyboardShortcut("r", modifiers: .command)
+                .disabled(app.isOffline)
             Button(app.isOffline ? "Go Online" : "Go Offline") { app.isOffline.toggle() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
         }

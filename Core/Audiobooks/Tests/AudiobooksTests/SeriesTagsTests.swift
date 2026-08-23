@@ -138,7 +138,7 @@ struct SeriesTagsTests {
         #expect(series.map(\.name) == ["Dune"])
         #expect(series.first?.bookCount == 2)
 
-        let entries = try library.books(inSeries: "Dune")
+        let entries = try library.books(inSeries: "Dune", sectionID: "srv:2")
         #expect(entries.map(\.book.ratingKey) == ["900", "901"])
         #expect(entries.map(\.position) == ["1", "2"])
     }
@@ -243,8 +243,60 @@ struct SeriesTagsTests {
         let (sync, library, _) = try makeSync(server)
         _ = try await sync.refreshSeriesTags()
 
-        let entries = try library.books(inSeries: "Dune")
+        let entries = try library.books(inSeries: "Dune", sectionID: "srv:2")
         #expect(entries.map(\.book.ratingKey) == ["900"])
+    }
+
+    /// A series name is not unique across libraries.
+    ///
+    /// `series(sectionID:)` builds the list from one section and this built the
+    /// books behind each entry from every section on the device, so a second
+    /// audiobook library — or one still cached from a server signed out of —
+    /// put its books on the screen too. The row said two books and the page
+    /// showed four.
+    @Test("Only the asked-for section's books are in a series")
+    func seriesIsScopedToSection() throws {
+        let db = try AudiobookDatabase.inMemory()
+
+        try db.writer.write { conn in
+            let server = ServerRecord(
+                machineIdentifier: "srv", name: "test",
+                lastConnectedURI: nil, lastConnectedAt: nil, lastConnectionWasRelay: false
+            )
+            try server.insert(conn)
+            for key in ["2", "3"] {
+                let section = LibrarySectionRecord(
+                    id: "srv:\(key)", serverID: "srv", sectionKey: key,
+                    title: "Audiobooks \(key)", lastSyncedAt: nil
+                )
+                try section.insert(conn)
+            }
+        }
+
+        let library = LibraryStore(database: db)
+        for (key, section) in [("900", "srv:2"), ("901", "srv:3")] {
+            let book = try JSONDecoder().decode(PlexBook.self, from: Data("""
+            {"ratingKey":"\(key)","title":"Book \(key)",
+             "Mood":[{"tag":"Series: Dune"},{"tag":"Sequence: Dune #1"}]}
+            """.utf8))
+            let track = try JSONDecoder().decode(PlexTrack.self, from: Data("""
+            {"ratingKey":"t\(key)","key":"/library/metadata/t\(key)","title":"Part 1",
+             "index":1,"duration":600000,
+             "Media":[{"Part":[{"id":"p\(key)","key":"/p\(key)","updatedAt":1}]}]}
+            """.utf8))
+            try library.cache(book: book, tracks: [track], chapters: [], sectionID: section)
+        }
+
+        let first = try library.books(inSeries: "Dune", sectionID: "srv:2")
+        #expect(first.map(\.book.ratingKey) == ["900"])
+
+        let second = try library.books(inSeries: "Dune", sectionID: "srv:3")
+        #expect(second.map(\.book.ratingKey) == ["901"])
+
+        // The next-in-series walk is confined the same way, taking the section
+        // from the book it is asked about rather than from a parameter.
+        let next = try library.nextInSeries(after: "900")
+        #expect(next == nil)
     }
 }
 
