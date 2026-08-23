@@ -352,25 +352,26 @@ $tv = screenshots('tvos');
 
             <?php
             /*
-             * Ko-fi, and the only third-party script on this site.
+             * Ko-fi, as a link rather than their widget script.
              *
-             * Guarded on `$isPrivacy` rather than left to its position. This
-             * section is below the route branch and so renders on both pages,
-             * and `?privacy` states in its own words that there is no
-             * third-party SDK of any kind. That sentence is about the app
-             * rather than about this page, and it is still not a sentence to
-             * print above a remote script.
+             * The widget is a script from storage.ko-fi.com, which most
+             * content blockers drop by default — uBlock, Brave and Pi-hole all
+             * carry it. When that happens `kofiwidget2` is undefined, the
+             * inline call throws, and the page shows an empty div with no
+             * indication anything was meant to be there.
              *
-             * The widget writes its own markup where this tag sits, so it
-             * renders here, under the links, rather than wherever the page
-             * happens to end.
+             * A link cannot fail that way, makes no request until it is
+             * clicked, and keeps this page free of third-party code — which
+             * the site claims for the app one section further up and may as
+             * well be true of itself.
              */
             ?>
             <?php if (!$isPrivacy): ?>
-            <div class="support">
-                <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
-                <script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#73a9f5', 'R7P325M7NE');kofiwidget2.draw();</script>
-            </div>
+            <p class="support">
+                <a class="kofi" href="https://ko-fi.com/R7P325M7NE" rel="noopener">
+                    Support me on Ko-fi
+                </a>
+            </p>
             <?php endif; ?>
         </div>
     </div>

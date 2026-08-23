@@ -253,8 +253,23 @@ footer a { color: var(--subtext0); }
     .store { transition: none; }
 }
 
-/* The Ko-fi widget draws its own button; this only gives it room.
-   Styling it further would fight a stylesheet loaded from somewhere else. */
-.support {
-    margin-top: 20px;
+/* Ko-fi, in Ko-fi's own blue, drawn here rather than by their script. */
+.support { margin-top: 20px; margin-bottom: 0; }
+
+.kofi {
+    display: inline-block;
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: #73a9f5;
+    color: #11111b;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition: filter 0.15s ease;
+}
+
+.kofi:hover { filter: brightness(1.08); }
+
+@media (prefers-reduced-motion: reduce) {
+    .kofi { transition: none; }
 }
