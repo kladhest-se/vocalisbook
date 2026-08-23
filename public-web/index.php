@@ -306,16 +306,28 @@ $tv = screenshots('tvos');
         <div class="callout">
             <h2>Pair it with VocalisMeta</h2>
             <p>
-                Plex's music agents describe albums, not books — so an audiobook library
-                arrives with the narrator as the artist and no series, no author list and
-                no edition. <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> is a metadata
-                agent for exactly this, and VocalisBook reads what it writes: authors,
-                narrators, series and reading order, and a durable identity per book so
-                your place follows the book rather than a row number on one server.
+                Plex's music schema has nowhere to put a narrator, a co-author, a series
+                position, a language or an edition. There is no field for any of them, so
+                no agent can supply them and no client can read them — an audiobook
+                library arrives with whoever the file was tagged with as the artist,
+                which is very often the person reading rather than the person who wrote
+                it.
+            </p>
+            <p>
+                <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> is a metadata agent for
+                exactly this. It matches your books against Audible, LibriVox,
+                Ljudboksarkivet and Open Library, and writes what it finds into the
+                fields Plex does have. VocalisBook reads them back where they are:
+                writers, narrators, series and reading order, language and edition, and
+                a durable identity per book so your place follows the book rather than a
+                row number on one server.
             </p>
             <p style="margin-bottom:0">
-                It is recommended rather than required. Without it VocalisBook works from
-                whatever Plex has; with it, the browsing screens have something to browse.
+                Without it VocalisBook still plays your library — titles, covers, artists,
+                genres and playback all work. What you do not get is narrators, series
+                order, language, edition, or progress that survives moving to a different
+                Plex server. It runs inside Plex Media Server, and the app still talks to
+                nothing but your own server.
             </p>
         </div>
     </div>
