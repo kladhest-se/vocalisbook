@@ -286,3 +286,9 @@ a dead button.
 - `git@github.com:kladhest-se/vocalisbook.git` — this repository
 
 The site is one PHP file, in `public-web/`, served from this repository.
+
+## Support
+
+VocalisBook is free, and stays free. If it is useful to you:
+
+[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-73a9f5?logo=ko-fi&logoColor=white)](https://ko-fi.com/R7P325M7NE)

@@ -212,45 +212,34 @@ $tv = screenshots('tvos');
     <div class="wrap">
         <h2>Built for listening, not for browsing</h2>
         <p class="lede">
-            Plex is very good at films. Audiobooks are a different problem: one book is
-            often ninety files, a position has to be exact, and picking up where you left
-            off matters more than anything on screen. VocalisBook is a native client that
-            treats them as books.
+            Plex is very good at films. Audiobooks are a different problem, and
+            VocalisBook is a native client that treats them as books.
         </p>
 
         <div class="features">
             <div class="feature">
                 <h3>Your place, everywhere</h3>
-                <p>Kept per book and to the millisecond, whether a book is one file or
-                ninety. Your position goes back to Plex; the rest of your listening state
-                travels through your own iCloud account.</p>
+                <p>Stop on one device, carry on from another.</p>
             </div>
             <div class="feature">
                 <h3>Real chapters</h3>
-                <p>From Plex's own data, the markers inside the file, or the file
-                boundaries as a last resort — and the list shows what you have finished
-                and what is playing.</p>
+                <p>Skip by chapter, and see what you have finished.</p>
             </div>
             <div class="feature">
                 <h3>Speed per book</h3>
-                <p>A dense history and a novel do not want the same speed, so the app
-                remembers one for each. The sleep timer fades rather than cutting, and can
-                stop at the end of the chapter.</p>
+                <p>Remembered for each one, with a sleep timer that fades.</p>
             </div>
             <div class="feature">
                 <h3>Offline</h3>
-                <p>Download to your iPhone or Mac for a flight, then switch on offline
-                mode to narrow the whole library to what will actually play.</p>
+                <p>Download to your iPhone or Mac for a flight.</p>
             </div>
             <div class="feature">
                 <h3>Bookmarks and history</h3>
-                <p>Mark a passage and find it on another device. Streaks, days listened
-                and a history of what you finished, kept on your devices.</p>
+                <p>Mark a passage, and see what you have listened to.</p>
             </div>
             <div class="feature">
                 <h3>Nothing collected</h3>
-                <p>No account with us, no analytics, no third-party services. Your
-                library, your listening and your server stay yours.</p>
+                <p>No account, no analytics. Your server stays yours.</p>
             </div>
         </div>
     </div>
@@ -306,27 +295,19 @@ $tv = screenshots('tvos');
         <div class="callout">
             <h2>Pair it with VocalisMeta</h2>
             <p>
-                Plex's music schema has nowhere to put a narrator, a co-author, a series
-                position, a language or an edition. There is no field for any of them, so
-                no agent can supply them and no client can read them — an audiobook
-                library arrives with whoever the file was tagged with as the artist,
-                which is very often the person reading rather than the person who wrote
-                it.
+                Plex has nowhere to put a narrator, a series position or an edition, so
+                no agent can supply them and no client can read them.
             </p>
             <p>
-                <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> is a metadata agent for
-                exactly this. It matches your books against Audible, LibriVox,
-                Ljudboksarkivet and Open Library, and writes what it finds into the
-                fields Plex does have. VocalisBook reads them back where they are:
-                authors, narrators, series and reading order, language and edition, and
-                a durable identity per book so your place follows the book rather than a
-                row number on one server.
+                <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> is a metadata agent that
+                fixes this. It matches your books against Audible, LibriVox,
+                Ljudboksarkivet and Open Library, and writes what it finds into Plex.
+                VocalisBook reads it back: authors, narrators, series and reading order,
+                language and edition.
             </p>
             <p style="margin-bottom:0">
-                Without it VocalisBook still plays your library — titles, covers, artists,
-                genres and playback all work. What you do not get is authors, narrators,
-                series order, language, edition, or progress that survives moving to a
-                different Plex server. It runs inside Plex Media Server, and the app still talks to
+                Without it your library still plays, but browsing it is down to titles
+                and covers. It runs inside Plex Media Server, and the app still talks to
                 nothing but your own server.
             </p>
         </div>
@@ -339,18 +320,16 @@ $tv = screenshots('tvos');
         <div class="features">
             <div class="feature">
                 <h3>A Plex Media Server</h3>
-                <p>Your own, with an audiobook library. VocalisBook is a client and brings
-                no content of its own.</p>
+                <p>Your own, with an audiobook library. VocalisBook brings no content of
+                its own.</p>
             </div>
             <div class="feature">
-                <h3>iOS 17, macOS 14, tvOS 17</h3>
-                <p>Or later. One app, three native builds — not a phone app stretched
-                across a television.</p>
-            </div>
-            <div class="feature">
-                <h3>iCloud, optionally</h3>
-                <p>For listening state across devices. Off is a supported state: the app
-                works from Plex alone.</p>
+                <h3>Supported devices</h3>
+                <p>
+                    iPhone and iPad on iOS 17 or later<br>
+                    Mac on macOS 14 or later<br>
+                    Apple TV on tvOS 17 or later
+                </p>
             </div>
         </div>
     </div>
