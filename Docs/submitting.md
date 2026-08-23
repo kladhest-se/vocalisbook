@@ -20,18 +20,23 @@ mentioning one of them is recognisable rather than mysterious.
 
 ## Still to do outside the build
 
-**Enable Push Notifications on the new App ID.** Was done, for
-`se.kladhest.plextales` — the rename to `se.kladhest.vocalisbook` means a new
-App ID, and this has to be granted again on it. The entitlement asks for it and
-the portal has to grant it, or signing fails with a profile that does not
-match.
+1.0.0 has been submitted, so the portal work below was a prerequisite for it and
+is presumably in place. Kept here as things to confirm rather than to do — an
+update is exactly when a setting nobody has looked at since the first submission
+goes unexamined.
 
-**Create the CloudKit container and deploy its schema to Production.** Also
-done for the old container and not carried over — `iCloud.se.kladhest.vocalisbook`
-is a genuinely separate container, not a renamed one, and starts with no
-schema at all. Test against Development first, the same as before; a build
-shipped before Production is deployed syncs nothing, silently, which is the
-failure mode this app has spent the most effort eliminating everywhere else.
+**Push Notifications on the App ID.** Granted for `se.kladhest.vocalisbook`, or
+signing fails with a profile that does not match the entitlement. This one
+announces itself: the archive will not sign.
+
+**The CloudKit container's schema, deployed to Production.**
+`iCloud.se.kladhest.vocalisbook` is a separate container from the old
+`plextales` one, not a renamed one, and starts with no schema. **This is the
+one that does not announce itself.** Signing succeeds, the build uploads, the
+app launches, and sync does nothing at all — silently, for everybody, which is
+the failure mode this app has spent the most effort eliminating everywhere
+else. Worth opening the dashboard and looking rather than assuming, because
+nothing else will tell you.
 
 **Screenshots**, one set per device class. Apple now scales the largest size down
 to cover the older classes, so the required sets are: iPhone 6.9" at 1320×2868,
@@ -42,8 +47,16 @@ the Mac at 2880×1800. They live in `Docs/app-store/`, numbered in upload order.
 Two things reject a screenshot outright regardless of its contents: an alpha
 channel, and 16 bits per channel. Captures off a device have arrived with both.
 The screens worth showing are Home with something part-way through, the player,
-and a grid with real cover art in it — a filtered search or a screen holding
-three books reads as an empty app on a 13" canvas.
+and a grid with real cover art in it — a search with few matches or a screen
+holding three books reads as an empty app on a 13" canvas.
+
+**The iPhone and iPad sets need retaking for 1.0.1.** The tab bar changed —
+Authors is now Peoples — the Books screen's header changed from "Library" to
+"Books", and the filter button is gone from its toolbar. Every existing iPhone
+capture shows at least one of those, and a store listing whose screenshots
+disagree with the build is the kind of thing App Review notices. The same
+captures are served by `public-web/`, so both want replacing together. The Mac
+and Apple TV sets are unaffected; nothing on either platform's chrome moved.
 
 **A privacy policy URL.** `https://vocalisbook.kladhest.se/?privacy`, served by
 `public-web/index.php` — the same one file as the marketing page, branching on a

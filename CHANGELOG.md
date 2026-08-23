@@ -29,6 +29,8 @@ opens above it.
   a top safe-area inset, which sits above the navigation title — and is now a
   row inside the list.
 - iOS: the Books tab's header said "Library".
+- iOS: the filter and sort button is gone from the Books toolbar, along with the
+  sheet behind it. The Mac and the television keep theirs.
 - macOS: an app volume slider in the player bar, separate from the system's and
   remembered between launches. A single Browse tab using a navigation-title menu was tried and
   reverted; the menu did not appear on device, leaving no way to reach series or

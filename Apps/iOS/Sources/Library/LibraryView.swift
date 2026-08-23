@@ -9,7 +9,6 @@ struct LibraryView: View {
     @Environment(\.theme) private var theme
     @State private var model = LibraryModel()
     @State private var selection: String?
-    @State private var showingFilters = false
 
     private var columns: [GridItem] { .coverGrid(sizeClass) }
 
@@ -117,24 +116,6 @@ struct LibraryView: View {
         .refreshable { await model.refresh(app: app) }
         .searchable(text: $model.search, prompt: "Title or author")
         .onChange(of: model.search) { _, _ in model.reload(app: app) }
-        .onChange(of: model.filter) { _, _ in model.reload(app: app) }
-        .onChange(of: model.sort) { _, _ in model.reload(app: app) }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingFilters = true
-                } label: {
-                    Image(systemName: model.filter.isActive || model.sort != .title
-                          ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                }
-                .accessibilityLabel("Filter and sort")
-                .popover(isPresented: $showingFilters, arrowEdge: .top) {
-                    FilterSortView(filter: $model.filter, sort: $model.sort, languages: model.availableLanguages)
-                        .frame(width: 300)
-                        .presentationCompactAdaptation(.sheet)
-                }
-            }
-        }
         // This screen listened to nothing but its own search field.
         //
         // Its Continue listening row is the same row Home has, and Home reloads
@@ -174,9 +155,6 @@ final class LibraryModel {
     private var hasShownAPage = false
     private(set) var progressText: String?
     var search = ""
-    var filter = BookFilter()
-    var sort = BookSort.title
-    private(set) var availableLanguages: [String] = []
 
     /// Reads from the local store only. Browsing never waits on the network —
     /// that is the entire reason the cache exists.
@@ -199,7 +177,6 @@ final class LibraryModel {
         guard let library = app.library, let sectionID = app.sectionID else {
             books = []
             loadFailed = false
-            availableLanguages = []
             return
         }
         // Offline mode is now the only reason this narrows to what is on
@@ -209,14 +186,13 @@ final class LibraryModel {
         // in place.
         let downloadedOnly = app.isOffline
         do {
-            // Filter and sort are not applied while searching — search is
-            // already its own separate query, matching by text rather than
-            // any of these values.
+            // Title order, always. `books(sectionID:)` still takes a filter and
+            // a sort — the Mac and the television use them — and this passes
+            // neither, so it gets the defaults.
             books = try search.isEmpty
-                ? library.books(sectionID: sectionID, downloadedOnly: downloadedOnly, filter: filter, sort: sort)
+                ? library.books(sectionID: sectionID, downloadedOnly: downloadedOnly)
                 : library.search(search, downloadedOnly: downloadedOnly)
             loadFailed = false
-            availableLanguages = (try? library.distinctLanguages(sectionID: sectionID)) ?? []
         } catch {
             books = []
             loadFailed = true
@@ -279,86 +255,6 @@ final class LibraryModel {
             app.handle(error)
         }
         reload(app: app)
-    }
-}
-
-/// The Books grid's filter and sort control, opened from the toolbar button
-/// beside search. `finishedOnly`/`unfinishedOnly` are two independent
-/// booleans on `BookFilter` — a shape that lets the data layer express
-/// "don't filter on progress" as simply both being false, without a third
-/// enum case existing purely for that — but they're mutually exclusive in
-/// this UI, which is why `progressSelection` below translates between them
-/// and a single three-way control rather than showing two toggles a person
-/// could set inconsistently.
-struct FilterSortView: View {
-    @Binding var filter: BookFilter
-    @Binding var sort: BookSort
-    let languages: [String]
-    @Environment(\.theme) private var theme
-
-    private enum ProgressFilter: String, CaseIterable {
-        case all = "All", unfinished = "Unfinished", finished = "Finished"
-    }
-
-    private var progressSelection: Binding<ProgressFilter> {
-        Binding(
-            get: {
-                if filter.finishedOnly { return .finished }
-                if filter.unfinishedOnly { return .unfinished }
-                return .all
-            },
-            set: { newValue in
-                filter.finishedOnly = newValue == .finished
-                filter.unfinishedOnly = newValue == .unfinished
-            }
-        )
-    }
-
-    var body: some View {
-        List {
-            Section {
-                Picker("Sort", selection: $sort) {
-                    Text("Title").tag(BookSort.title)
-                    Text("Recently added").tag(BookSort.recentlyAdded)
-                    Text("Release year").tag(BookSort.releaseYear)
-                    Text("Publication year").tag(BookSort.publicationYear)
-                }
-                if !languages.isEmpty {
-                    Picker("Language", selection: $filter.language) {
-                        Text("Any").tag(String?.none)
-                        ForEach(languages, id: \.self) { language in
-                            Text(language).tag(String?.some(language))
-                        }
-                    }
-                }
-                Picker("Progress", selection: progressSelection) {
-                    ForEach(ProgressFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
-            }
-            .listRowBackground(theme.surface)
-
-            Section {
-                Toggle("Abridged only", isOn: $filter.abridgedOnly)
-                Toggle("Full cast or dramatized only", isOn: $filter.fullCastOrDramatizedOnly)
-                Toggle("Downloaded only", isOn: $filter.downloadedOnly)
-            }
-            .listRowBackground(theme.surface)
-
-            if filter.isActive || sort != .title {
-                Section {
-                    Button("Reset") {
-                        filter = BookFilter()
-                        sort = .title
-                    }
-                    .foregroundStyle(theme.accent)
-                }
-                .listRowBackground(theme.surface)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(theme.background.ignoresSafeArea())
     }
 }
 
