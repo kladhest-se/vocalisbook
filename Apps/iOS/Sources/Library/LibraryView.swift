@@ -26,7 +26,12 @@ struct LibraryView: View {
         // few — which is a matter of grid metrics, not of navigation structure.
         NavigationStack {
             grid
-                .navigationTitle("Library")
+                // "Books", matching the tab that opens it.
+                //
+                // It said "Library" while the tab said Books, which is two
+                // names for one screen — and the tab bar is the label a person
+                // reads first, so the header was the one that had to move.
+                .navigationTitle("Books")
                 .accountToolbar()
                 .navigationDestination(item: $selection) { ratingKey in
                     BookDetailView(ratingKey: ratingKey)

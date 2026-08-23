@@ -202,7 +202,7 @@ struct MainTabs: View {
         switch item {
         case .home: home.miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .books: LibraryView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .authors: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
+        case .peoples: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .series: SeriesView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .genres: GenresView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         }
@@ -487,13 +487,17 @@ enum MainTab: Hashable, CaseIterable {
     // Named `books` rather than `browse`: this tab is specifically the full
     // library grid, and "browse" described the action rather than the
     // content — every other tab is just as much a way of browsing.
-    case home, books, authors, series, genres
+    //
+    // `peoples` rather than `authors` for the same reason. The tab holds both
+    // authors and narrators behind a segmented switch, and naming it after
+    // either one names half of what is there.
+    case home, books, peoples, series, genres
 
     var title: String {
         switch self {
         case .home: "Home"
         case .books: "Books"
-        case .authors: "Authors"
+        case .peoples: "Peoples"
         case .series: "Series"
         case .genres: "Genres"
         }
@@ -508,7 +512,7 @@ enum MainTab: Hashable, CaseIterable {
         // the books" and "books grouped by series", which stopped being
         // clear the moment the tab was actually named Books outright.
         case .books: "books.vertical"
-        case .authors: "person"
+        case .peoples: "person.2"
         case .series: "square.stack"
         case .genres: "theatermasks"
         }

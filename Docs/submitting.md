@@ -162,8 +162,12 @@ raises no question about protected material at all.
 >
 > Download books to your iPhone or Mac for a flight, and switch on offline mode
 > to narrow the whole library to what will actually play. Bookmark a passage and
-> find it on another device. Browse by author, series or genre, and see which
-> narrator read a book, when your metadata agent has provided them.
+> find it on another device.
+>
+> Browse by author, narrator, series or genre, and see the edition, language and
+> reading order of what you own — all of it from the tags a metadata agent has
+> written into Plex. Plex's own music schema has no field for any of it, so a
+> library nothing has matched browses by title and cover alone.
 >
 > VocalisBook collects nothing. There is no account with us, no analytics and no
 > third-party services — your library, your listening and your server stay

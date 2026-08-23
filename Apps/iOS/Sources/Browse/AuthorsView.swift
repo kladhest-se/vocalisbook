@@ -5,6 +5,13 @@ import PlatformShared
 /// Authors and narrators, from the cache, as one screen with a segmented
 /// switch rather than a sixth tab.
 ///
+/// The tab is called Peoples and holds both, so neither segment has to carry
+/// the whole tab's name.
+///
+/// An author here is somebody the metadata agent credited with writing the
+/// book, never whoever the file happened to be tagged with — see
+/// `LibraryStore.authors`, which no longer reads Plex's album artist.
+///
 /// iOS caps this app's tab bar at five deliberately — a sixth tab is not
 /// dropped, it is bucketed into iOS's own unthemed "More" screen, which
 /// looks like a different app sitting on top of this one. A segmented
@@ -97,7 +104,7 @@ struct AuthorsView: View {
                 .padding(.vertical, 8)
                 .background(theme.background)
             }
-            // Pulling down here did nothing at all: authors are derived from
+            // Pulling down here did nothing at all: these are derived from
             // the cached books, so the list only changes when the library is
             // fetched — and this screen never fetched. Every other tab
             // refreshes; a gesture that works in three places and silently does
@@ -109,6 +116,14 @@ struct AuthorsView: View {
                 reload()
             }
             .searchable(text: $search, prompt: mode == .authors ? "Author" : "Narrator")
+            // The segment, not the tab.
+            //
+            // The tab is Peoples and holds two kinds of them, so a fixed
+            // header would name the container while the list underneath is
+            // one or the other. Following `mode` means the header always says
+            // what is actually on screen — Authors or Narrators — which is
+            // also the only place that distinction is written down once the
+            // segmented control has scrolled away under the search field.
             .navigationTitle(mode.rawValue)
             .accountToolbar()
             .navigationDestination(for: PersonRoute.self) { route in
@@ -120,9 +135,12 @@ struct AuthorsView: View {
             .overlay {
                 if rows.isEmpty {
                     ContentUnavailableView(
-                        mode == .authors ? "No authors yet" : "No narrators yet",
+                        mode == .authors ? "No authors" : "No narrators",
                         systemImage: mode == .authors ? "person" : "person.wave.2",
-                        description: Text("They appear once your library has been fetched.")
+                        description: Text(
+                            "Both come from the metadata agent, not from the artist "
+                            + "Plex holds. Books it has not matched carry neither."
+                        )
                     )
                 }
             }
@@ -148,7 +166,7 @@ struct AuthorsView: View {
     }
 
     /// A name alone is not enough to know which detail screen to push — an
-    /// author and a narrator with the same first name would collide on a
+    /// author and a narrator with the same name would collide on a
     /// bare `String` route. Carrying `mode` alongside the name is what keeps
     /// the destination correct regardless of which segment the row was
     /// tapped from, rather than reading whatever `mode` happens to be at

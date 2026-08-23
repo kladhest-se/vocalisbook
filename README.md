@@ -60,7 +60,9 @@ never contacts Audible, Open Library or anything else — only your Plex server.
 - **Bookmarks** with labels, following the book between devices.
 - **Next in series**, from the position VocalisMeta recorded, so novellas
   numbered 3.5 sort where they belong.
-- **Browse** by writer, narrator, series or genre; search by title or author.
+- **Browse** by author, narrator, series or genre; search by title or author.
+  Authors are the people the metadata agent credited, not whoever the file was
+  tagged with — for an audiobook that is as often the person reading.
 - **Offline downloads** on iPhone and Mac, with background transfers that
   survive the app being suspended.
 - **Offline mode** narrows the whole library to what will actually play.
@@ -76,9 +78,9 @@ Playback is direct play. Nothing is ever transcoded.
 
 ## Each platform in its own shape
 
-**iPhone and iPad** — Home, Books, Authors, Series and Genres. Books is the whole
-library as a grid; the rest are ways into it, and narrators sit behind a switch
-inside Authors. Five tabs is also the ceiling — a sixth falls into iOS's own
+**iPhone and iPad** — Home, Books, Peoples, Series and Genres. Books is the whole
+library as a grid; the rest are ways into it, and Peoples holds authors and
+narrators behind a switch. Five tabs is also the ceiling — a sixth falls into iOS's own
 unthemed "More" screen, which the app's theme cannot reach. A mini player above
 the tab bar, a full player sheet, and a player that turns on its side when the
 screen is wider than it is tall.

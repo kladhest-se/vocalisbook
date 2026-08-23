@@ -318,15 +318,15 @@ $tv = screenshots('tvos');
                 exactly this. It matches your books against Audible, LibriVox,
                 Ljudboksarkivet and Open Library, and writes what it finds into the
                 fields Plex does have. VocalisBook reads them back where they are:
-                writers, narrators, series and reading order, language and edition, and
+                authors, narrators, series and reading order, language and edition, and
                 a durable identity per book so your place follows the book rather than a
                 row number on one server.
             </p>
             <p style="margin-bottom:0">
                 Without it VocalisBook still plays your library — titles, covers, artists,
-                genres and playback all work. What you do not get is narrators, series
-                order, language, edition, or progress that survives moving to a different
-                Plex server. It runs inside Plex Media Server, and the app still talks to
+                genres and playback all work. What you do not get is authors, narrators,
+                series order, language, edition, or progress that survives moving to a
+                different Plex server. It runs inside Plex Media Server, and the app still talks to
                 nothing but your own server.
             </p>
         </div>
