@@ -34,17 +34,12 @@ struct PlayerBookmarksSheet: View {
             List {
                 Section {
                     Button {
-                        // Saved first, then offered a name.
-                        //
-                        // The bookmark exists either way — dismissing the
-                        // prompt leaves it unlabelled, showing its timestamp,
-                        // which is what an unnamed bookmark has always looked
-                        // like. So this adds a chance to name it without
-                        // making naming a step you have to complete.
-                        if let created = app.addBookmark() {
-                            renaming = created
-                            draftLabel = ""
-                        }
+                        // No prompt. The label is the timestamp, written at
+                        // creation, and renaming is a separate act — marking
+                        // a place and describing it are two different jobs,
+                        // and only the first one is urgent while a book is
+                        // playing.
+                        _ = app.addBookmark()
                         reload()
                     } label: {
                         Label(
@@ -109,8 +104,7 @@ struct PlayerBookmarksSheet: View {
                                         renaming = bookmark
                                         draftLabel = bookmark.label ?? ""
                                     } label: {
-                                        Label(bookmark.label == nil ? "Name" : "Rename",
-                                              systemImage: "pencil")
+                                        Label("Rename", systemImage: "pencil")
                                     }
                                 }
 
@@ -134,10 +128,8 @@ struct PlayerBookmarksSheet: View {
                                         .foregroundStyle(theme.secondaryText)
                                 }
                                 .buttonStyle(.borderless)
-                                .help(bookmark.label == nil ? "Name this bookmark" : "Rename")
-                                .accessibilityLabel(
-                                    bookmark.label == nil ? "Name this bookmark" : "Rename bookmark"
-                                )
+                                .help("Rename this bookmark")
+                                .accessibilityLabel("Rename bookmark")
                             }
                         }
                     }
@@ -151,13 +143,21 @@ struct PlayerBookmarksSheet: View {
             // already reading from `theme` except the background itself.
             .scrollContentBackground(.hidden)
             .background(theme.background.ignoresSafeArea())
+            // `.cancellationAction`, not `.primaryAction`.
+            //
+            // The Done button was there and did not draw: a sheet on this
+            // platform puts its cancellation action where a person looks for
+            // a way out, and leaves `primaryAction` to a toolbar the sheet
+            // does not present. `MetadataDiagnosticsView` is the same shape —
+            // a `List` in a `NavigationStack` in a fixed-size sheet — and
+            // uses this placement, which is why its Done button has always
+            // been visible and this one was not.
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }
-            .alert(renaming?.label == nil ? "Name this bookmark" : "Rename bookmark",
-                   isPresented: Binding(
+            .alert("Rename bookmark", isPresented: Binding(
                 get: { renaming != nil },
                 set: { if !$0 { renaming = nil } }
             )) {

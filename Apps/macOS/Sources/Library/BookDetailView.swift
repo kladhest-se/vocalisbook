@@ -288,6 +288,18 @@ if PlatformCapabilities.localStoreIsDurable {
                 }
             }
             .padding(24)
+            // Room for the transport, which the safe area does not make.
+            //
+            // `PlayerBar` is a bottom inset on the split view rather than on
+            // this column — deliberately, so a sidebar link cannot push the
+            // one control that must never disappear off screen — and that
+            // inset does not reach this scroll view. So the chapter list at
+            // the bottom of a book sat underneath the bar and could not be
+            // scrolled clear of it.
+            //
+            // Only while something is playing, because only then is the bar
+            // there.
+            .padding(.bottom, app.player.bookRatingKey != nil ? PlayerBar.height : 0)
         }
         // Asked once, with both answers spelled out.
         //

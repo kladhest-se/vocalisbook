@@ -33,8 +33,12 @@ opens above it.
   sheet behind it. The Mac and the television keep theirs.
 - macOS: an app volume slider in the player bar, separate from the system's and
   remembered between launches.
-- macOS: naming a bookmark was reachable only by right-clicking it. There is a
-  pencil button on each row now, and saving one offers a name straight away. A single Browse tab using a navigation-title menu was tried and
+- macOS: a new bookmark is named for its position, and renaming was reachable
+  only by right-clicking it — there is a pencil button on each row now.
+- macOS: the bookmarks sheet had no visible way out; its Done button used a
+  toolbar placement the sheet does not draw.
+- macOS: the chapter list at the bottom of a book sat under the player bar.
+- macOS: the player's cover and title open the book. A single Browse tab using a navigation-title menu was tried and
   reverted; the menu did not appear on device, leaving no way to reach series or
   genres at all.
 

@@ -252,3 +252,9 @@ footer a { color: var(--subtext0); }
 @media (prefers-reduced-motion: reduce) {
     .store { transition: none; }
 }
+
+/* The Ko-fi widget draws its own button; this only gives it room.
+   Styling it further would fight a stylesheet loaded from somewhere else. */
+.support {
+    margin-top: 20px;
+}

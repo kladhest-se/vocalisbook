@@ -1151,7 +1151,21 @@ final class AppModel {
         guard let key = player.bookRatingKey else { return nil }
         var record: BookmarkRecord?
         save(while: "save that bookmark") {
-            record = try bookmarks.add(bookRatingKey: key, absoluteMs: player.absoluteMs)
+            // Named for its position at creation, through the `label:` the
+            // store already takes — not written and then renamed, which would
+            // bump the revision and mark it dirty for a value it was born
+            // with.
+            //
+            // The list already showed the time when there was no label, so
+            // this looks identical. The difference is that the label now
+            // exists: renaming starts from something rather than an empty
+            // field, and the bookmark arrives on another device with the name
+            // it had here.
+            record = try bookmarks.add(
+                bookRatingKey: key,
+                absoluteMs: player.absoluteMs,
+                label: Format.duration(ms: player.absoluteMs)
+            )
         }
         bookmarkRevision += 1
         // Pushed from here rather than from every revision bump: a bump is a

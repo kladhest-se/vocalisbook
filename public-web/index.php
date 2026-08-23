@@ -370,6 +370,29 @@ $tv = screenshots('tvos');
                 <a href="<?= e(VOCALISMETA) ?>">VocalisMeta</a> ·
                 <a href="mailto:<?= e(CONTACT_EMAIL) ?>"><?= e(CONTACT_EMAIL) ?></a>
             </p>
+
+            <?php
+            /*
+             * Ko-fi, and the only third-party script on this site.
+             *
+             * Guarded on `$isPrivacy` rather than left to its position. This
+             * section is below the route branch and so renders on both pages,
+             * and `?privacy` states in its own words that there is no
+             * third-party SDK of any kind. That sentence is about the app
+             * rather than about this page, and it is still not a sentence to
+             * print above a remote script.
+             *
+             * The widget writes its own markup where this tag sits, so it
+             * renders here, under the links, rather than wherever the page
+             * happens to end.
+             */
+            ?>
+            <?php if (!$isPrivacy): ?>
+            <div class="support">
+                <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
+                <script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#73a9f5', 'R7P325M7NE');kofiwidget2.draw();</script>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </section>

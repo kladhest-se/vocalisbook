@@ -45,6 +45,15 @@ struct PlayerBar: View {
         }
     }
 
+    /// How tall the bar is, for anything that has to leave room for it.
+    ///
+    /// A constant rather than two 76s: the bar is a bottom safe-area inset on
+    /// the split view, and that inset does not reach the scroll view inside
+    /// the detail column — so a screen with content at its very bottom has to
+    /// pad for the bar itself. Two hardcoded numbers would drift the first
+    /// time this one changed.
+    static let height: CGFloat = 76
+
     var body: some View {
         // Measured rather than guessed from the window: this bar sits inside the
         // detail column, whose width is the window minus the sidebar, and the
@@ -52,7 +61,7 @@ struct PlayerBar: View {
         GeometryReader { geometry in
             content(density: .forWidth(geometry.size.width))
         }
-        .frame(height: 76)
+        .frame(height: Self.height)
     }
 
     @ViewBuilder
@@ -60,16 +69,35 @@ struct PlayerBar: View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 16) {
-                CoverImage(thumb: app.nowPlayingThumb)
-                    .frame(width: 52, height: 52)
-                    .clipShape(.rect(cornerRadius: 6))
+                // The artwork opens the book, the way it does in every other
+                // player anybody has used. `app.open(bookRatingKey:)` is the
+                // same door Settings and the downloads list already come
+                // through, so this lands on a fresh trail rather than pushing
+                // a book onto whatever the sidebar happens to be showing.
+                Button {
+                    if let key = player.bookRatingKey { app.open(bookRatingKey: key) }
+                } label: {
+                    CoverImage(thumb: app.nowPlayingThumb)
+                        .frame(width: 52, height: 52)
+                        .clipShape(.rect(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .help("Show this book")
+                .accessibilityLabel("Show this book")
 
                 if density != .minimal {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(app.nowPlayingTitle ?? "").font(.callout.weight(.medium)).lineLimit(1)
-                        Text(player.currentChapter?.title ?? "")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Button {
+                        if let key = player.bookRatingKey { app.open(bookRatingKey: key) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(app.nowPlayingTitle ?? "").font(.callout.weight(.medium)).lineLimit(1)
+                            Text(player.currentChapter?.title ?? "")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
+                    .help("Show this book")
                     // Flexible rather than a fixed 220: the title was the one
                     // thing that could not give up any room, so everything else
                     // paid for it. Widened further — 220/260 to 280/380 — to
