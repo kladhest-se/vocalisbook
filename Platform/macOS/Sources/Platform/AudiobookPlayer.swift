@@ -33,6 +33,20 @@ public final class AudiobookPlayer {
         }
     }
 
+    /// This app's own output level, 0 to 1.
+    ///
+    /// Not the system volume, and deliberately so: a Mac is often playing a
+    /// book against something else — a call, a video, a second machine — and
+    /// the answer to "quieter, but only this" is an app-level control. The
+    /// menu bar volume moves everything.
+    ///
+    /// macOS only. On iOS and tvOS the hardware buttons and Control Centre own
+    /// this, and an in-app slider there would be a second control that
+    /// disagrees with the one people already reach for.
+    public var volume: Float = 1.0 {
+        didSet { player.volume = volume }
+    }
+
     /// Skip interval for the in-app and Lock Screen controls.
     public var skipIntervalSeconds: Int = 30 {
         didSet { onSkipIntervalChanged?(skipIntervalSeconds) }
@@ -425,14 +439,17 @@ public final class AudiobookPlayer {
 
     private func fadeOutAndPause(over interval: TimeInterval) async {
         let steps = 20
-        let startVolume = player.volume
+        // Faded against `volume`, and restored to it rather than to a
+        // snapshot. The two were the same thing while nothing else could set
+        // the level; now that a slider can, a fade that restored its own
+        // starting value would undo any adjustment made while it ran.
         for step in 0..<steps {
-            guard !Task.isCancelled else { player.volume = startVolume; return }
-            player.volume = startVolume * Float(steps - step - 1) / Float(steps)
+            guard !Task.isCancelled else { player.volume = volume; return }
+            player.volume = volume * Float(steps - step - 1) / Float(steps)
             try? await Task.sleep(for: .seconds(interval / Double(steps)))
         }
         pause()
-        player.volume = startVolume
+        player.volume = volume
         sleepTimer = nil
     }
 

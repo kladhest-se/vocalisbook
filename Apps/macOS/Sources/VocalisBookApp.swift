@@ -718,6 +718,21 @@ final class AppModel {
         }
         player.skipIntervalSeconds =
             UserDefaults.standard.object(forKey: "skipInterval") as? Int ?? 30
+        // Restored, or a slider left at 30% last night is back at full
+        // tomorrow — loud, in a quiet room, which is the one direction this
+        // control must not surprise anybody in.
+        //
+        // Existence checked separately from the value, because the two
+        // shortcuts here both fail. `float(forKey:)` returns 0 for a key that
+        // was never written, which would start a fresh install silently muted
+        // and looking broken. And `object(forKey:) as? Float` leans on
+        // NSNumber's conditional bridge — a plist stores every real as a
+        // double, and a cast that must round-trip exactly is a strange thing
+        // to make a volume depend on. This asks whether the key is there, then
+        // reads it with the accessor that converts properly.
+        if UserDefaults.standard.object(forKey: "volume") != nil {
+            player.volume = UserDefaults.standard.float(forKey: "volume")
+        }
     }
 
     // MARK: - Connecting
@@ -1184,6 +1199,17 @@ final class AppModel {
     func setSkipInterval(_ seconds: Int) {
         player.skipIntervalSeconds = seconds
         UserDefaults.standard.set(seconds, forKey: "skipInterval")
+    }
+
+    /// This app's own output level, remembered between launches.
+    ///
+    /// In `UserDefaults` rather than iCloud: it is a property of one machine's
+    /// speakers, not of the listener. A Mac driving a hi-fi and a laptop on a
+    /// train want different numbers, and syncing this would have each of them
+    /// overwrite the other.
+    func setVolume(_ volume: Float) {
+        player.volume = volume
+        UserDefaults.standard.set(volume, forKey: "volume")
     }
 
     /// Drains the outbox, quietly.

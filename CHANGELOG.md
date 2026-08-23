@@ -25,7 +25,12 @@ opens above it.
   claiming to be the series.
 - The library grid stopped at 500 books; the limit is now optional and unset.
 - iOS: the Authors tab is now Peoples, holding Authors and Narrators behind the
-  same switch. A single Browse tab using a navigation-title menu was tried and
+  same switch. Its header sat under the search field — the segmented control was
+  a top safe-area inset, which sits above the navigation title — and is now a
+  row inside the list.
+- iOS: the Books tab's header said "Library".
+- macOS: an app volume slider in the player bar, separate from the system's and
+  remembered between launches. A single Browse tab using a navigation-title menu was tried and
   reverted; the menu did not appear on device, leaving no way to reach series or
   genres at all.
 

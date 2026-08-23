@@ -66,44 +66,60 @@ struct AuthorsView: View {
 
     var body: some View {
         NavigationStack {
-            List(rows) { row in
-                NavigationLink(value: PersonRoute(name: row.name, mode: mode)) {
-                    HStack(spacing: 12) {
-                        // One cover, not the four the television shows. A 2×2
-                        // collage at this size is mush; the point here is only
-                        // to make the row scannable by something other than
-                        // reading it.
-                        CoverImage(thumb: row.cover)
-                            .frame(width: 44, height: 44)
-                            .clipShape(.rect(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.name)
-                                .foregroundStyle(theme.text)
-                                .lineLimit(1)
-                            Text(row.bookCount == 1 ? "1 book" : "\(row.bookCount) books")
-                                .font(.footnote)
-                                .foregroundStyle(theme.tertiaryText)
-                        }
+            List {
+                // The switch is a row, not a top inset.
+                //
+                // `safeAreaInset(edge: .top)` pins content above everything the
+                // scroll view owns — including the large navigation title and
+                // the search field, which `searchable` puts in that same
+                // region. So the order came out picker, search field, title,
+                // and the title was off-screen until the list was dragged down
+                // far enough to reveal it. Every other browse screen reads
+                // title, then search field, then rows.
+                //
+                // As the first row it scrolls with the content, which is the
+                // trade: it is no longer pinned while scrolling. Worth it, and
+                // it is what Mail and Files do with a scope bar of their own.
+                Section {
+                    Picker("", selection: $mode) {
+                        ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(row.name)
-                    .accessibilityValue(row.bookCount == 1 ? "1 book" : "\(row.bookCount) books")
+                    .pickerStyle(.segmented)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
-                .listRowBackground(theme.surface)
+
+                ForEach(rows) { row in
+                    NavigationLink(value: PersonRoute(name: row.name, mode: mode)) {
+                        HStack(spacing: 12) {
+                            // One cover, not the four the television shows. A 2×2
+                            // collage at this size is mush; the point here is only
+                            // to make the row scannable by something other than
+                            // reading it.
+                            CoverImage(thumb: row.cover)
+                                .frame(width: 44, height: 44)
+                                .clipShape(.rect(cornerRadius: 6))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.name)
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                Text(row.bookCount == 1 ? "1 book" : "\(row.bookCount) books")
+                                    .font(.footnote)
+                                    .foregroundStyle(theme.tertiaryText)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(row.name)
+                        .accessibilityValue(row.bookCount == 1 ? "1 book" : "\(row.bookCount) books")
+                    }
+                    .listRowBackground(theme.surface)
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(theme.background.ignoresSafeArea())
-            .safeAreaInset(edge: .top) {
-                Picker("", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(theme.background)
-            }
             // Pulling down here did nothing at all: these are derived from
             // the cached books, so the list only changes when the library is
             // fetched — and this screen never fetched. Every other tab

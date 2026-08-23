@@ -31,11 +31,15 @@ struct PlayerBar: View {
     /// fitting, the window is a compact player instead.
     private enum Density {
         case full        // everything
-        case tight       // no sleep timer
+        case tight       // no volume, no sleep timer
         case minimal     // transport, scrubber, speed
 
         static func forWidth(_ width: CGFloat) -> Density {
-            if width >= 980 { .full }
+            // 1060 rather than 980 since the volume slider joined `full`.
+            // Raising the threshold is the honest way to add a control to a
+            // row that already drops things by width: leaving it at 980 would
+            // have made `full` mean "everything, slightly clipped".
+            if width >= 1060 { .full }
             else if width >= 820 { .tight }
             else { .minimal }
         }
@@ -127,6 +131,39 @@ struct PlayerBar: View {
                         AirPlayRoutePicker(tint: theme.secondaryText, activeTint: theme.accent)
                             .frame(width: 26, height: 22)
                             .accessibilityLabel("AirPlay")
+                    }
+
+                    if density == .full {
+                        // App volume, not the system's.
+                        //
+                        // First to go when the window narrows, and last to be
+                        // added, because it is the one control here with an
+                        // answer elsewhere that most people already know: the
+                        // menu bar. It earns its place by being *only* this
+                        // app, which the menu bar cannot do.
+                        HStack(spacing: 6) {
+                            // A threshold, not `== 0`. A slider dragged to the
+                            // far left lands on something like 1e-7 as often
+                            // as on zero, and the icon would then show sound
+                            // coming out of a book nobody can hear.
+                            Image(systemName: player.volume < 0.01
+                                  ? "speaker.slash" : "speaker.wave.2")
+                                .foregroundStyle(theme.secondaryText)
+                                .imageScale(.small)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(player.volume) },
+                                    set: { app.setVolume(Float($0)) }
+                                ),
+                                in: 0...1
+                            )
+                            .controlSize(.small)
+                            .frame(width: 84)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Volume")
+                        .accessibilityValue("\(Int(player.volume * 100)) percent")
                     }
 
                     if density != .minimal {
