@@ -34,7 +34,17 @@ struct PlayerBookmarksSheet: View {
             List {
                 Section {
                     Button {
-                        _ = app.addBookmark()
+                        // Saved first, then offered a name.
+                        //
+                        // The bookmark exists either way — dismissing the
+                        // prompt leaves it unlabelled, showing its timestamp,
+                        // which is what an unnamed bookmark has always looked
+                        // like. So this adds a chance to name it without
+                        // making naming a step you have to complete.
+                        if let created = app.addBookmark() {
+                            renaming = created
+                            draftLabel = ""
+                        }
                         reload()
                     } label: {
                         Label(
@@ -50,56 +60,84 @@ struct PlayerBookmarksSheet: View {
                 } else {
                     Section("Saved") {
                         ForEach(bookmarks, id: \.id) { bookmark in
-                            Button {
-                                player.seek(toAbsoluteMs: bookmark.absoluteMs)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        // The label when there is one, the time
-                                        // when there is not — an unlabelled
-                                        // bookmark is still a place, and hiding
-                                        // it behind "Untitled" says less than
-                                        // the time it points at.
-                                        Text(bookmark.label ?? Format.duration(ms: bookmark.absoluteMs))
-                                            .lineLimit(1)
-                                        if bookmark.label != nil {
-                                            Text(Format.duration(ms: bookmark.absoluteMs))
-                                                .font(.caption.monospacedDigit())
-                                                .foregroundStyle(theme.secondaryText)
-                                        }
-                                    }
-                                    Spacer()
-                                }
-                                .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            // A context menu rather than a swipe: a Mac has no
-                            // swipe, and the same two actions belong on a
-                            // right-click.
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    // Through `save(while:)`, as the book
-                                    // screen's list does — a failed write says
-                                    // so rather than appearing to work.
-                                    app.save(while: "delete that bookmark") {
-                                        try app.bookmarks.delete(id: bookmark.id)
-                                    }
-                                    // A tombstone, not a hole: this is what
-                                    // carries the deletion off the device.
-                                    // Without it the bookmark comes back from
-                                    // whichever device still has it.
-                                    app.syncToCloud()
-                                    reload()
+                            HStack(spacing: 8) {
+                                Button {
+                                    player.seek(toAbsoluteMs: bookmark.absoluteMs)
+                                    dismiss()
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            // The label when there is one, the time
+                                            // when there is not — an unlabelled
+                                            // bookmark is still a place, and hiding
+                                            // it behind "Untitled" says less than
+                                            // the time it points at.
+                                            Text(bookmark.label ?? Format.duration(ms: bookmark.absoluteMs))
+                                                .lineLimit(1)
+                                            if bookmark.label != nil {
+                                                Text(Format.duration(ms: bookmark.absoluteMs))
+                                                    .font(.caption.monospacedDigit())
+                                                    .foregroundStyle(theme.secondaryText)
+                                            }
+                                        }
+                                        Spacer()
+                                    }
+                                    .contentShape(.rect)
                                 }
+                                .buttonStyle(.plain)
+                                // A context menu rather than a swipe: a Mac has no
+                                // swipe, and the same two actions belong on a
+                                // right-click.
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        // Through `save(while:)`, as the book
+                                        // screen's list does — a failed write says
+                                        // so rather than appearing to work.
+                                        app.save(while: "delete that bookmark") {
+                                            try app.bookmarks.delete(id: bookmark.id)
+                                        }
+                                        // A tombstone, not a hole: this is what
+                                        // carries the deletion off the device.
+                                        // Without it the bookmark comes back from
+                                        // whichever device still has it.
+                                        app.syncToCloud()
+                                        reload()
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    Button {
+                                        renaming = bookmark
+                                        draftLabel = bookmark.label ?? ""
+                                    } label: {
+                                        Label(bookmark.label == nil ? "Name" : "Rename",
+                                              systemImage: "pencil")
+                                    }
+                                }
+
+                                // A visible button as well as the context menu.
+                                //
+                                // The menu was the only way to name a bookmark,
+                                // and a right-click is not a discoverable one —
+                                // nothing on screen said naming existed, so as
+                                // far as anybody using it was concerned, it did
+                                // not. The Mac has no swipe actions to fall back
+                                // on the way the phone does.
+                                //
+                                // Outside the seek button rather than inside it:
+                                // a button nested in a button is one target on
+                                // this platform, and it would be the wrong one.
                                 Button {
                                     renaming = bookmark
                                     draftLabel = bookmark.label ?? ""
                                 } label: {
-                                    Label("Rename", systemImage: "pencil")
+                                    Image(systemName: "pencil")
+                                        .foregroundStyle(theme.secondaryText)
                                 }
+                                .buttonStyle(.borderless)
+                                .help(bookmark.label == nil ? "Name this bookmark" : "Rename")
+                                .accessibilityLabel(
+                                    bookmark.label == nil ? "Name this bookmark" : "Rename bookmark"
+                                )
                             }
                         }
                     }
@@ -118,7 +156,8 @@ struct PlayerBookmarksSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .alert("Name this bookmark", isPresented: Binding(
+            .alert(renaming?.label == nil ? "Name this bookmark" : "Rename bookmark",
+                   isPresented: Binding(
                 get: { renaming != nil },
                 set: { if !$0 { renaming = nil } }
             )) {

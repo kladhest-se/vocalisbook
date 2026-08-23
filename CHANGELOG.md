@@ -32,7 +32,9 @@ opens above it.
 - iOS: the filter and sort button is gone from the Books toolbar, along with the
   sheet behind it. The Mac and the television keep theirs.
 - macOS: an app volume slider in the player bar, separate from the system's and
-  remembered between launches. A single Browse tab using a navigation-title menu was tried and
+  remembered between launches.
+- macOS: naming a bookmark was reachable only by right-clicking it. There is a
+  pencil button on each row now, and saving one offers a name straight away. A single Browse tab using a navigation-title menu was tried and
   reverted; the menu did not appear on device, leaving no way to reach series or
   genres at all.
 
