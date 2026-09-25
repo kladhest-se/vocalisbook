@@ -754,12 +754,39 @@ final class AppModel {
         await connect(token: token)
     }
 
+
+    /// What to say when the account signed in owns no server and has been
+    /// shared none.
+    ///
+    /// Not a failure, which is why it reads as instructions rather than an
+    /// apology. Signing in succeeded; the account simply has nothing to play
+    /// from, and the only person who can fix that is whoever owns the server.
+    /// The old text — "No Plex servers are visible to this account." — was
+    /// accurate and told nobody what to do next, under a heading saying
+    /// something had gone wrong.
+    ///
+    /// It matters most for the people least able to work it out. Plex's own
+    /// sign-in page offers Apple, Google and Facebook, and choosing one of
+    /// those creates a *fresh* Plex account rather than signing in to an
+    /// existing one — so somebody who has a server, and expected to reach it,
+    /// arrives here instead. App Review did exactly that on 1.0.0 and filed
+    /// the result as a bug in the app.
+    ///
+    /// One paragraph on purpose: macOS's `FailureView` shows only the first,
+    /// splitting on a blank line, so anything after one would be invisible
+    /// there and nowhere else.
+    // `nonisolated`, for the reason `cloudStateKey` below gives: a `static let`
+    // on a `@MainActor` type inherits that isolation, and `FailureView` reads
+    // this from a plain computed property rather than from `body`. A `String`
+    // constant is Sendable on its own, so saying so gives up nothing.
+    nonisolated static let noServersMessage = "This Plex account cannot see any Plex Media Server. VocalisBook plays audiobooks from a server you own or have been given access to — sign in with the account that owns your server, or ask its owner to share the library with this one. If the server is new, give Plex a moment to finish setting it up and try again."
+
     func connect(token: String) async {
         phase = .launching
         do {
             servers = try await PlexResourceDirectory(transport: transport).servers(token: token)
             guard !servers.isEmpty else {
-                phase = .failed("No Plex servers are visible to this account.")
+                phase = .failed(Self.noServersMessage)
                 return
             }
             if let remembered = keychain.read(.serverIdentifier),

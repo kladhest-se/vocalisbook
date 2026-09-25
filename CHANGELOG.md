@@ -1,48 +1,6 @@
 # Changelog
 
-## 1.0.1 - Unreleased
-
-Not released. `MARKETING_VERSION` in `Config` already reads 1.0.1, so a
-development build is never mistaken for the one on the Store. When this ships,
-the heading becomes `## 1.0.1 - <date>` and a fresh `## 1.0.2 - Unreleased`
-opens above it.
-
-- Plex tag children were all being discarded — `Tag.id` demanded a string and
-  Plex sends a number — so narrators, genres, co-authors, series, language,
-  edition, work identity and contributors all arrived empty.
-- Migration v12 clears `plex_updated_at` so every book already cached re-fetches
-  its detail once.
-- `name` added as a contributor source; it is the fourth the contract documents
-  and every `narrator:name:` credit was being rejected as malformed.
-- Narrators group by canonical key where every credit agrees on one, preferring
-  a provider-backed identity over the name-derived one.
-- Authors are the metadata agent's credits only; Plex's album artist is no
-  longer unioned in, which is where the duplicate and the narrators came from.
-- `librivox:` with nothing after it parsed as a shared book identity.
-- A series drilled into every cached library at once; `books(inSeries:)` now
-  takes a section, and the next-in-series walk stays in the anchor book's.
-- A collection's order now says so — "Next in the Dune collection" rather than
-  claiming to be the series.
-- The library grid stopped at 500 books; the limit is now optional and unset.
-- iOS: the Authors tab is now Peoples, holding Authors and Narrators behind the
-  same switch. Its header sat under the search field — the segmented control was
-  a top safe-area inset, which sits above the navigation title — and is now a
-  row inside the list.
-- iOS: the Books tab's header said "Library".
-- iOS: the filter and sort button is gone from the Books toolbar, along with the
-  sheet behind it. The Mac and the television keep theirs.
-- macOS: an app volume slider in the player bar, separate from the system's and
-  remembered between launches.
-- macOS: a new bookmark is named for its position, and renaming was reachable
-  only by right-clicking it — there is a pencil button on each row now.
-- macOS: the bookmarks sheet had no visible way out; its Done button used a
-  toolbar placement the sheet does not draw.
-- macOS: the chapter list at the bottom of a book sat under the player bar.
-- macOS: the player's cover and title open the book. A single Browse tab using a navigation-title menu was tried and
-  reverted; the menu did not appear on device, leaving no way to reach series or
-  genres at all.
-
-## 1.0.0
+## 1.0.0 - Unreleased
 
 The first release. Everything below is new.
 
@@ -244,3 +202,63 @@ browsing — is a toggle beside search in Browse.
   rather than straight to the top.
 - **Apple TV** — a focus-driven grid, a full-screen player, and search. Bookmarks
   are a list on the book, since a television has no swipe to delete with.
+
+### Fixed before release
+
+Work done after the first submission was rejected and before anything
+reached anybody. Listed separately because it describes changes rather than
+what the app does, and folded in here rather than given a version of its
+own: there is no 1.0.0 in the world for a 1.0.1 to follow.
+
+- Plex tag children were all being discarded — `Tag.id` demanded a string and
+  Plex sends a number — so narrators, genres, co-authors, series, language,
+  edition, work identity and contributors all arrived empty.
+- Migration v12 clears `plex_updated_at` so every book already cached re-fetches
+  its detail once.
+- `name` added as a contributor source; it is the fourth the contract documents
+  and every `narrator:name:` credit was being rejected as malformed.
+- Narrators group by canonical key where every credit agrees on one, preferring
+  a provider-backed identity over the name-derived one.
+- Authors are the metadata agent's credits only; Plex's album artist is no
+  longer unioned in, which is where the duplicate and the narrators came from.
+- `librivox:` with nothing after it parsed as a shared book identity.
+- A series drilled into every cached library at once; `books(inSeries:)` now
+  takes a section, and the next-in-series walk stays in the anchor book's.
+- A collection's order now says so — "Next in the Dune collection" rather than
+  claiming to be the series.
+- The library grid stopped at 500 books; the limit is now optional and unset.
+- iOS: the Authors tab is now Peoples, holding Authors and Narrators behind the
+  same switch. Its header sat under the search field — the segmented control was
+  a top safe-area inset, which sits above the navigation title — and is now a
+  row inside the list. A single Browse tab using a navigation-title menu was
+  tried and reverted; the menu did not appear on device, leaving no way to reach
+  series or genres at all.
+- Signing in with a Plex account that owns no server, and has been shared none,
+  now says what to do about it rather than "Something went wrong — No Plex
+  servers are visible to this account." The heading reads "No server to play
+  from". Rejected under Guideline 2.1(a) in the 1.0.0 review, after signing in
+  by a route that lands on an account with no server.
+- iOS: `PickerViews.swift` used `Theme` without importing `PlatformShared`,
+  which built only because another file in the target imported it. Eight
+  warnings, and an error in a future language mode.
+- `make lint` builds everything and fails on any compiler warning, printing them
+  deduplicated with the paths made relative.
+- `make ios-run`, `ipados-run` and `tvos-run` failed on Xcode 27 with "Unable to
+  find application named 'Simulator'" — it is called Device Hub now. The window
+  is found by path under the selected Xcode, both names tried, and failing to
+  raise it no longer fails the target.
+- `make ios-install` with no device said "Set IOS_DEVICE" — the internal
+  variable, not the `DEVICE` that `make help` documents and `make devices`
+  prints. One macro for all three verbs now, naming `DEVICE` and the command to
+  run.
+- iOS: the Books tab's header said "Library".
+- iOS: the filter and sort button is gone from the Books toolbar, along with the
+  sheet behind it. The Mac and the television keep theirs.
+- macOS: an app volume slider in the player bar, separate from the system's and
+  remembered between launches.
+- macOS: a new bookmark is named for its position, and renaming was reachable
+  only by right-clicking it — there is a pencil button on each row now.
+- macOS: the bookmarks sheet had no visible way out; its Done button used a
+  toolbar placement the sheet does not draw.
+- macOS: the chapter list at the bottom of a book sat under the player bar.
+- macOS: the player's cover and title open the book.

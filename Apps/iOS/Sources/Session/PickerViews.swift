@@ -1,5 +1,10 @@
 import SwiftUI
 import PlexKit
+// `@Environment(\.theme)` resolves to a `Theme` from this package, and a
+// property whose type comes from a module this file never imported is a
+// warning today and an error in a future language mode. It compiled because
+// another file in the target imports it, which is not something to rely on.
+import PlatformShared
 
 /// What a server picker has to say.
 ///

@@ -94,9 +94,22 @@ struct FailureView: View {
         message.components(separatedBy: "\n\n").first ?? message
     }
 
+    /// Nothing went wrong when an account simply has no server.
+    ///
+    /// The heading is the first thing read and the thing that sets what the
+    /// text underneath is taken to mean: under "Something went wrong", a
+    /// paragraph explaining how Plex sharing works reads as troubleshooting a
+    /// bug. Under "No server to play from", the same paragraph reads as an
+    /// instruction.
+    private var isMissingServer: Bool { message == AppModel.noServersMessage }
+
     var body: some View {
         ContentUnavailableView {
-            Label("Something went wrong", systemImage: "exclamationmark.triangle")
+            if isMissingServer {
+                Label("No server to play from", systemImage: "externaldrive.badge.questionmark")
+            } else {
+                Label("Something went wrong", systemImage: "exclamationmark.triangle")
+            }
         } description: {
             Text(summary)
         } actions: {

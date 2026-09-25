@@ -50,7 +50,7 @@ The screens worth showing are Home with something part-way through, the player,
 and a grid with real cover art in it — a search with few matches or a screen
 holding three books reads as an empty app on a 13" canvas.
 
-**The iPhone and iPad sets need retaking for 1.0.1.** The tab bar changed —
+**The iPhone and iPad sets need retaking.** The tab bar changed —
 Authors is now Peoples — the Books screen's header changed from "Library" to
 "Books", and the filter button is gone from its toolbar. Every existing iPhone
 capture shows at least one of those, and a store listing whose screenshots
@@ -224,9 +224,9 @@ Publishable as-is at a URL of your choosing.
 
 ## Before pressing Upload
 
-- The version in `Config` is 1.0.1 and matches the release being uploaded, and
-  CHANGELOG.md's top heading has been changed from `1.0.1 - Unreleased` to
-  `1.0.1 - <date>`. The heading is what says a version is no longer in progress;
+- The version in `Config` is 1.0.0 and matches the release being uploaded, and
+  CHANGELOG.md's top heading has been changed from `1.0.0 - Unreleased` to
+  `1.0.0 - <date>`. The heading is what says a version is no longer in progress;
   the number in `Config` runs ahead of it during development, which is why this
   step exists at all.
 

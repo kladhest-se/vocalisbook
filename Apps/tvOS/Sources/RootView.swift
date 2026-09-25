@@ -30,10 +30,18 @@ struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
 
+    /// Nothing went wrong when an account simply has no server — the heading
+    /// decides whether the text below it reads as troubleshooting or as an
+    /// instruction.
+    private var isMissingServer: Bool { message == AppModel.noServersMessage }
+
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 64))
-            Text("Something went wrong").font(.title)
+            Image(systemName: isMissingServer
+                  ? "externaldrive.badge.questionmark" : "exclamationmark.triangle")
+                .font(.system(size: 64))
+            Text(isMissingServer ? "No server to play from" : "Something went wrong")
+                .font(.title)
             Text(message).font(.title3).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Sign out") { app.signOut() }

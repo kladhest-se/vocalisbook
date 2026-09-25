@@ -7,7 +7,7 @@
 # vocalisbook-tools/tests/app.sh and the publish checks call these rather than
 # duplicating xcodebuild invocations.
 
-.PHONY: help packages core platforms test clean 	
+.PHONY: help packages core platforms test lint clean 	
 	ios-project ios-build ios-test ios-run ios-install ios-destinations \
 	macos-project macos-build macos-test macos-run macos-install macos-destinations \
 	tvos-project tvos-build tvos-test tvos-run tvos-install tvos-destinations \
@@ -21,6 +21,7 @@ help:
 	@echo "  make packages          Core and all three Platform packages"
 	@echo "  make build             packages, then compile all three apps"
 	@echo "  make test              build, then every app's tests on a simulator"
+	@echo "  make lint              build, and fail on any compiler warning"
 	@echo ""
 	@echo "  make ios-build         does the iOS app compile"
 	@echo "  make ios-test          the iOS app tests, on a simulator"
@@ -102,10 +103,88 @@ build: packages ios-build macos-build tvos-build
 # stall. Worth it deliberately; not worth it before every push.
 test: packages ios-test macos-test tvos-test
 
+# `make build`, plus refusing to be happy about warnings.
+#
+# Not a separate linter. There is no SwiftLint here and adding one would mean
+# something to install, which this Makefile has stayed clear of on purpose —
+# and the warnings that have actually cost something were all the compiler's
+# own. `PickerViews.swift` used a type from a module it never imported and
+# built anyway, because another file in the target imported it; eight warnings
+# said so across three platforms and scrolled past in ten thousand lines of
+# build log.
+#
+# So this runs the same build and reads what it said. `build` rather than
+# `test`: warnings come from compiling, and booting three simulators to learn
+# nothing extra is a poor trade for something meant to run before a push.
+#
+# Not `SWIFT_TREAT_WARNINGS_AS_ERRORS` either, deliberately. That stops at the
+# first one and reports it as an error, so a warning in a header read by
+# forty files becomes forty errors and the real list is unknowable. Reading the
+# whole log gives the whole list, once, deduplicated.
+#
+# The log goes to a temp file rather than the repository: the root is checked
+# for stray files, and a lint artifact sitting in it would fail that check the
+# moment somebody ran this before a publish.
+#
+# Spelled as a full template with XXXXXX rather than `mktemp -t vocalisbook-lint`.
+# The short form works on this Mac and fails on GNU coreutils, which wants the
+# X's — and `tests/run.sh` refuses a script that depends on one platform's
+# behaviour for exactly this reason.
+lint:
+	@log=$$(mktemp "$${TMPDIR:-/tmp}/vocalisbook-lint.XXXXXX"); \
+	if ! $(MAKE) --no-print-directory build > "$$log" 2>&1; then \
+		echo "build failed, so there is nothing to lint yet:"; \
+		grep "error:" "$$log" | sed 's|^.*/vocalisbook/||' | sort -u | head -20; \
+		echo ""; \
+		echo "full log: $$log"; \
+		exit 1; \
+	fi; \
+	warnings=$$(grep "warning:" "$$log" \
+		| grep -v "appintentsmetadataprocessor\|appintentsnltrainingprocessor" \
+		| sed 's|^.*/vocalisbook/||' | sort -u); \
+	if [ -n "$$warnings" ]; then \
+		printf '%s\n' "$$warnings"; \
+		echo ""; \
+		echo "$$(printf '%s\n' "$$warnings" | wc -l | tr -d ' ') distinct warning(s)"; \
+		echo "full log: $$log"; \
+		exit 1; \
+	fi; \
+	rm -f "$$log"; \
+	echo "no warnings"
+
 clean:
 	@rm -rf Apps/*/VocalisBook.xcodeproj Apps/*/.build \
 		Core/*/.build Platform/*/.build
 	@echo "removed generated projects and build products"
+
+# Brings the simulator window forward, if it can find one.
+#
+# `open -a Simulator` worked until Xcode 27, which renamed the app to Device
+# Hub. After that it failed with "Unable to find application named 'Simulator'"
+# — and under `set -e` that ended `make ios-run` *after* the build had
+# succeeded and the app had been installed, which reads as the build being
+# broken when nothing about it was.
+#
+# Found by path under the selected Xcode rather than by name, because the name
+# is the thing that changed and `xcode-select -p` is the thing that has not.
+# Both names are tried, newest first, so this works on 27 and on 16 without
+# asking which is installed.
+#
+# Ends in `true` on purpose, and `xcode-select` has its own `|| true` for the
+# same reason one level down: under `set -e` a failing command substitution in
+# an assignment ends the recipe, so a machine with no selected Xcode would have
+# died here exactly the way `open -a Simulator` did.
+#
+# The window is a convenience: `simctl launch` below attaches the console and
+# runs the app whether or not anything is on screen, so failing to raise a
+# window must not fail the target. If neither name is found, the app still
+# launches and the console still streams here — the simulator simply stays
+# where it was.
+OPEN_SIMULATOR = apps=$$(xcode-select -p 2>/dev/null || true)/Applications; \
+	for candidate in "$$apps/Device Hub.app" "$$apps/Simulator.app"; do \
+		if [ -d "$$candidate" ]; then open "$$candidate" 2>/dev/null; break; fi; \
+	done; \
+	true
 
 IOS_PROJECT   := Apps/iOS/VocalisBook.xcodeproj
 MACOS_PROJECT := Apps/macOS/VocalisBook.xcodeproj
@@ -233,6 +312,27 @@ print(msg, file=sys.stderr) if msg else None; \
 sys.exit(1 if msg else 0)"
 endef
 
+# Says DEVICE, because that is the name everything else says.
+#
+# This used to print "Set IOS_DEVICE. make devices" — the internal variable,
+# not the one `make help` documents, `make devices` prints, or the comment on
+# `DEVICE` above declares to be the single name. So the one message somebody
+# reads when they get this wrong sent them to a variable mentioned nowhere
+# else, and the fix it suggested was a name they had no other reason to know.
+#
+# One macro for all three verbs, so the message cannot drift from the variable
+# again. `$@` names the verb actually typed, so the example is the command to
+# run rather than a template to adapt.
+define REQUIRE_DEVICE
+test -n "$(1)" || { \
+	echo "No device to install on. DEVICE is not set."; \
+	echo ""; \
+	echo "  make devices          lists attached iPhones, iPads and Apple TVs"; \
+	echo ""; \
+	echo "Then pass the id:     make $@ DEVICE=00008130-000..."; \
+	exit 1; }
+endef
+
 define REQUIRE_TEAM
 test -n "$(TEAM_ID)" || { \
 	echo "No Apple Development certificate in the keychain, so no team id to find."; \
@@ -335,7 +435,7 @@ print('\n'.join('  %-26s %-26s %s' % r for r in rows) if rows else '  none attac
 # Developer site — before this target would find it provisioned.
 ios-device:
 	@$(REQUIRE_TEAM)
-	@test -n "$(IOS_DEVICE)" || { echo "Set IOS_DEVICE. make devices"; exit 1; }
+	@$(call REQUIRE_DEVICE,$(IOS_DEVICE))
 	@echo "Signing with team $(TEAM_ID)"
 	@$(MAKE) ios-project
 	@$(call REQUIRE_PLATFORM,$(IOS_DEVICE),iOS)
@@ -364,7 +464,7 @@ ios-device:
 # that comes with it.
 tvos-device:
 	@$(REQUIRE_TEAM)
-	@test -n "$(TVOS_DEVICE)" || { echo "Set TVOS_DEVICE. make devices"; exit 1; }
+	@$(call REQUIRE_DEVICE,$(TVOS_DEVICE))
 	@echo "Signing with team $(TEAM_ID)"
 	@$(MAKE) tvos-project
 	@$(call REQUIRE_PLATFORM,$(TVOS_DEVICE),tvOS)
@@ -502,7 +602,7 @@ ios-sim-install: ios-build
 # running on the simulator.
 ios-run: ios-sim-install
 	@set -e; $(IOS_APP_INFO); \
-	open -a Simulator; \
+	$(OPEN_SIMULATOR); \
 	xcrun simctl launch --console-pty $(IOS_SIM_ID) "$$bundle"
 
 # The iPad verbs. Same project, same scheme, iPad destination.
@@ -511,7 +611,7 @@ ios-run: ios-sim-install
 # for it would suggest there are two binaries to keep in step.
 ipados-run: ipados-sim-install
 	@set -e; $(IOS_APP_INFO); \
-	open -a Simulator; \
+	$(OPEN_SIMULATOR); \
 	xcrun simctl launch --console-pty $(IPAD_SIM_ID) "$$bundle"
 
 ipados-sim-install: ios-build
@@ -534,7 +634,7 @@ ipados-destinations:
 # IPAD_DEVICE when installing on an iPad is what somebody will do.
 ipados-device:
 	@$(REQUIRE_TEAM)
-	@test -n "$(IPAD_DEVICE)" || { echo "Set IPAD_DEVICE. make devices"; exit 1; }
+	@$(call REQUIRE_DEVICE,$(IPAD_DEVICE))
 	@$(MAKE) ios-device IOS_DEVICE=$(IPAD_DEVICE)
 
 ios-destinations:
@@ -613,7 +713,7 @@ tvos-sim-install: tvos-build
 # running on the simulator.
 tvos-run: tvos-sim-install
 	@set -e; $(TVOS_APP_INFO); \
-	open -a Simulator; \
+	$(OPEN_SIMULATOR); \
 	xcrun simctl launch --console-pty $(TVOS_SIM_ID) "$$bundle"
 
 tvos-destinations:

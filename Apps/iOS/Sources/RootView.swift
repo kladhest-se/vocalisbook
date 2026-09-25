@@ -36,9 +36,18 @@ struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
 
+    /// Nothing went wrong when an account simply has no server — the heading
+    /// decides whether the text below it reads as troubleshooting or as an
+    /// instruction.
+    private var isMissingServer: Bool { message == AppModel.noServersMessage }
+
     var body: some View {
         ContentUnavailableView {
-            Label("Something went wrong", systemImage: "exclamationmark.triangle")
+            if isMissingServer {
+                Label("No server to play from", systemImage: "externaldrive.badge.questionmark")
+            } else {
+                Label("Something went wrong", systemImage: "exclamationmark.triangle")
+            }
         } description: {
             Text(message)
         } actions: {
