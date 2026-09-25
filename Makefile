@@ -122,6 +122,41 @@ test: packages ios-test macos-test tvos-test
 # forty files becomes forty errors and the real list is unknowable. Reading the
 # whole log gives the whole list, once, deduplicated.
 #
+# Streams while it runs, through `tee`, rather than going quiet for the minutes
+# a full build takes and then printing a verdict. A silent tool is
+# indistinguishable from a hung one, and the first thing anybody does about
+# that is Ctrl-C.
+#
+# The live stream shows the markers the build itself emits — `--- ` as each
+# package and app starts, `  built ` as each app finishes — plus the name of
+# every file being compiled, indented under them, and every warning or error at
+# the moment it appears.
+#
+# Not SwiftPM's own "Building for debugging...", which names nothing and
+# arrives once per target: eight identical lines scroll past while the useful
+# ones are still coming, which is the same as no progress at all except that it
+# looks like some.
+#
+# `awk` rather than `grep` and `sed`, because the file names need reshaping as
+# they stream and `sed` disagrees about how to do that unbuffered — BSD wants
+# `-l`, GNU wants `-u`, and `tests/run.sh` refuses a script that picks one.
+# `awk` needs neither: `fflush()` after each line is portable and explicit.
+#
+# Both compilers are handled because they say it differently: SwiftPM writes
+# `[3/48] Compiling PlexKit BookIdentity.swift` and xcodebuild writes a
+# `SwiftCompile` line with full paths and a trailing comma between names. The
+# rule takes the last field ending in `.swift`, strips the directory, and skips
+# a repeat of the name it just printed — xcodebuild mentions the same file more
+# than once per module.
+# The full output still lands in the log, so nothing is lost; it is just not
+# all on screen. The deduplicated summary comes after, because a warning from
+# a header read by forty files streams past forty times and is one thing to
+# fix.
+#
+# `make`'s exit status is written to a file rather than read from the pipeline,
+# whose status belongs to the last `grep`. `pipefail` would do it in bash and
+# is not POSIX, and this has to work under whatever /bin/sh turns out to be.
+#
 # The log goes to a temp file rather than the repository: the root is checked
 # for stray files, and a lint artifact sitting in it would fail that check the
 # moment somebody ran this before a publish.
@@ -132,17 +167,45 @@ test: packages ios-test macos-test tvos-test
 # behaviour for exactly this reason.
 lint:
 	@log=$$(mktemp "$${TMPDIR:-/tmp}/vocalisbook-lint.XXXXXX"); \
-	if ! $(MAKE) --no-print-directory build > "$$log" 2>&1; then \
+	rc=$$(mktemp "$${TMPDIR:-/tmp}/vocalisbook-lint-rc.XXXXXX"); \
+	echo "linting: building every package and app"; \
+	echo ""; \
+	{ $(MAKE) --no-print-directory build 2>&1; echo $$? > "$$rc"; } \
+		| tee "$$log" \
+		| awk '\
+			/^--- / { print; fflush(); next } \
+			/^  built / { print; fflush(); next } \
+			/warning:/ || /error:/ { \
+				if ($$0 ~ /appintents/) next; \
+				print; fflush(); next \
+			} \
+			/Compiling/ { \
+				for (i = NF; i >= 1; i--) { \
+					f = $$i; \
+					sub(/,$$/, "", f); \
+					if (f ~ /\.swift$$/) { \
+						sub(/.*\//, "", f); \
+						if (f != last) { print "    " f; fflush(); last = f } \
+						next \
+					} \
+				} \
+			}' \
+		|| true; \
+	echo ""; \
+	if [ "$$(cat "$$rc")" != "0" ]; then \
 		echo "build failed, so there is nothing to lint yet:"; \
 		grep "error:" "$$log" | sed 's|^.*/vocalisbook/||' | sort -u | head -20; \
 		echo ""; \
 		echo "full log: $$log"; \
+		rm -f "$$rc"; \
 		exit 1; \
 	fi; \
+	rm -f "$$rc"; \
 	warnings=$$(grep "warning:" "$$log" \
 		| grep -v "appintentsmetadataprocessor\|appintentsnltrainingprocessor" \
 		| sed 's|^.*/vocalisbook/||' | sort -u); \
 	if [ -n "$$warnings" ]; then \
+		echo "warnings, deduplicated:"; \
 		printf '%s\n' "$$warnings"; \
 		echo ""; \
 		echo "$$(printf '%s\n' "$$warnings" | wc -l | tr -d ' ') distinct warning(s)"; \
@@ -150,7 +213,7 @@ lint:
 		exit 1; \
 	fi; \
 	rm -f "$$log"; \
-	echo "no warnings"
+	echo "built clean — no warnings"
 
 clean:
 	@rm -rf Apps/*/VocalisBook.xcodeproj Apps/*/.build \
@@ -541,6 +604,7 @@ version=$$(awk -F' = ' '/^MARKETING_VERSION/{print $$2; exit}' Config/$(1).xccon
 endef
 
 ios-build: ios-project
+	@echo "--- Apps/iOS"
 	@set -e; $(call bump_build,iOS); \
 	xcodebuild build -project $(IOS_PROJECT) -scheme VocalisBook \
 		-sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
@@ -675,6 +739,7 @@ tvos-project:
 	@cd Apps/tvOS && xcodegen generate
 
 tvos-build: tvos-project
+	@echo "--- Apps/tvOS"
 	@set -e; $(call bump_build,tvOS); \
 	xcodebuild build -project $(TVOS_PROJECT) -scheme VocalisBook \
 		-sdk appletvsimulator -destination 'generic/platform=tvOS Simulator' \
@@ -744,6 +809,7 @@ macos-project:
 # Signing belongs to the verbs that produce something to run: `macos-run` and
 # `macos-device`. This one produces an answer.
 macos-build: macos-project
+	@echo "--- Apps/macOS"
 	@set -e; $(call bump_build,macOS); \
 	xcodebuild build -project $(MACOS_PROJECT) -scheme VocalisBook \
 		-destination 'platform=macOS,arch=arm64' \

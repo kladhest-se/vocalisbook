@@ -227,7 +227,7 @@ own: there is no 1.0.0 in the world for a 1.0.1 to follow.
 - A collection's order now says so — "Next in the Dune collection" rather than
   claiming to be the series.
 - The library grid stopped at 500 books; the limit is now optional and unset.
-- iOS: the Authors tab is now Peoples, holding Authors and Narrators behind the
+- iOS: the Authors tab is now People, holding Authors and Narrators behind the
   same switch. Its header sat under the search field — the segmented control was
   a top safe-area inset, which sits above the navigation title — and is now a
   row inside the list. A single Browse tab using a navigation-title menu was
@@ -236,13 +236,20 @@ own: there is no 1.0.0 in the world for a 1.0.1 to follow.
 - Signing in with a Plex account that owns no server, and has been shared none,
   now says what to do about it rather than "Something went wrong — No Plex
   servers are visible to this account." The heading reads "No server to play
-  from". Rejected under Guideline 2.1(a) in the 1.0.0 review, after signing in
-  by a route that lands on an account with no server.
+  from", and Sign out is the emphasised button in the theme's accent, since
+  signing back in as an account that owns a server is the whole fix. On the Mac
+  it changes places with Reconnect, which stays for a server still being set up.
+  Rejected under Guideline 2.1(a) in the 1.0.0 review, after signing in by a
+  route that lands on an account with no server.
 - iOS: `PickerViews.swift` used `Theme` without importing `PlatformShared`,
   which built only because another file in the target imported it. Eight
   warnings, and an error in a future language mode.
-- `make lint` builds everything and fails on any compiler warning, printing them
-  deduplicated with the paths made relative.
+- `make lint` builds everything and fails on any compiler warning. Progress and
+  warnings stream as they happen, with a deduplicated summary at the end.
+- iPhone, iPad and Apple TV had no retry on the failure screen — every failure,
+  including a Wi-Fi blip, offered only Sign out, which throws away the token
+  and sends you back through the web flow. Reconnect is there now, as it has
+  been on the Mac.
 - `make ios-run`, `ipados-run` and `tvos-run` failed on Xcode 27 with "Unable to
   find application named 'Simulator'" — it is called Device Hub now. The window
   is found by path under the selected Xcode, both names tried, and failing to

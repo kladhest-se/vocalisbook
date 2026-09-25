@@ -29,6 +29,8 @@ struct RootView: View {
 struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
+    @State private var isReconnecting = false
 
     /// Nothing went wrong when an account simply has no server — the heading
     /// decides whether the text below it reads as troubleshooting or as an
@@ -44,9 +46,45 @@ struct FailureView: View {
                 .font(.title)
             Text(message).font(.title3).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Sign out") { app.signOut() }
+            // Tinted when it is the only thing that helps. tvOS draws its own
+            // focus ring and largely ignores a button style, so the colour is
+            // the one thing here that can say "this one".
+            //
+            // Reconnect first when something merely failed, and second when
+            // the account has no server — the order is the emphasis here,
+            // since a television has no prominent-button style to lean on.
+            HStack(spacing: 24) {
+                if isMissingServer {
+                    Button("Sign out") { app.signOut() }
+                        .tint(theme.accent)
+                    reconnectButton
+                } else {
+                    reconnectButton
+                    Button("Sign out") { app.signOut() }
+                }
+            }
         }
         .padding(80)
+    }
+
+    /// Retries the whole connection from scratch rather than whatever step
+    /// failed — see `retryConnection`'s own comment for why that is the more
+    /// useful behaviour, not a lesser one.
+    private var reconnectButton: some View {
+        Button {
+            isReconnecting = true
+            Task {
+                await app.retryConnection()
+                isReconnecting = false
+            }
+        } label: {
+            if isReconnecting {
+                ProgressView()
+            } else {
+                Text("Reconnect")
+            }
+        }
+        .disabled(isReconnecting)
     }
 }
 

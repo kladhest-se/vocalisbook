@@ -446,6 +446,31 @@ final class AppModel {
     // constant is Sendable on its own, so saying so gives up nothing.
     nonisolated static let noServersMessage = "This Plex account cannot see any Plex Media Server. VocalisBook plays audiobooks from a server you own or have been given access to — sign in with the account that owns your server, or ask its owner to share the library with this one. If the server is new, give Plex a moment to finish setting it up and try again."
 
+    // MARK: - Connecting
+
+    /// What "Reconnect" on the failure screen does — the exact same path a
+    /// launch takes, not a lighter-weight retry of whatever step failed.
+    /// `connect` re-discovers servers from scratch, which is deliberate: the
+    /// failure that put somebody here is usually the server's address having
+    /// changed, or a permission having been granted since, and re-running the
+    /// discovery is what actually answers either case. Signed out is a
+    /// different phase with its own screen, not something this button can
+    /// reach — if the token itself is gone, retrying a connection with no
+    /// token would only reproduce the same failure.
+    ///
+    /// The Mac had this and the phone did not, so on a phone every failure —
+    /// a Wi-Fi blip, a sleeping server, a VPN dropping — offered exactly one
+    /// action, Sign out. That is the destructive one: it throws away the token
+    /// and sends somebody back through the web flow to fix something a retry
+    /// would have cleared.
+    func retryConnection() async {
+        guard let token = keychain.read(.plexToken) else {
+            phase = .signedOut
+            return
+        }
+        await connect(token: token)
+    }
+
     func connect(token: String) async {
         phase = .launching
         do {

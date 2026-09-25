@@ -78,6 +78,7 @@ struct RootView: View {
 struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
     @State private var isReconnecting = false
 
     /// The first sentence only, not the paragraph of troubleshooting detail
@@ -113,27 +114,56 @@ struct FailureView: View {
         } description: {
             Text(summary)
         } actions: {
-            // Retries the whole connection from scratch rather than
-            // whatever step failed — see `retryConnection`'s own comment for
-            // why that is the more useful behaviour, not a lesser one.
-            Button {
-                isReconnecting = true
-                Task {
-                    await app.retryConnection()
-                    isReconnecting = false
-                }
-            } label: {
-                if isReconnecting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("Reconnect")
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isReconnecting)
+            // Which button leads, and which is the way back.
+            //
+            // Normally Reconnect: something failed, trying again is the first
+            // thing to do, and signing out is the drastic option nobody should
+            // reach for first. With no server it is the other way round —
+            // reconnecting asks the same account the same question and gets
+            // the same answer, and the fix is to come back as somebody who
+            // owns one. So the order and the emphasis swap; the buttons do
+            // not change.
+            //
+            // Reconnect stays either way, unprominent here. The message tells
+            // somebody whose server is new to give Plex a moment and try
+            // again, and that sentence needs a button to mean anything.
+            if isMissingServer {
+                Button("Sign out") { app.signOut() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.accent)
 
-            Button("Sign out") { app.signOut() }
+                reconnectButton
+                    .buttonStyle(.bordered)
+            } else {
+                reconnectButton
+                    .buttonStyle(.borderedProminent)
+
+                Button("Sign out") { app.signOut() }
+            }
         }
+    }
+
+    /// Retries the whole connection from scratch rather than whatever step
+    /// failed — see `retryConnection`'s own comment for why that is the more
+    /// useful behaviour, not a lesser one.
+    ///
+    /// Extracted so both arms above can place it without the body being
+    /// written twice, which is how the two would drift.
+    private var reconnectButton: some View {
+        Button {
+            isReconnecting = true
+            Task {
+                await app.retryConnection()
+                isReconnecting = false
+            }
+        } label: {
+            if isReconnecting {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("Reconnect")
+            }
+        }
+        .disabled(isReconnecting)
     }
 }
 

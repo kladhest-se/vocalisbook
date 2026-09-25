@@ -51,7 +51,7 @@ and a grid with real cover art in it — a search with few matches or a screen
 holding three books reads as an empty app on a 13" canvas.
 
 **The iPhone and iPad sets need retaking.** The tab bar changed —
-Authors is now Peoples — the Books screen's header changed from "Library" to
+Authors is now People — the Books screen's header changed from "Library" to
 "Books", and the filter button is gone from its toolbar. Every existing iPhone
 capture shows at least one of those, and a store listing whose screenshots
 disagree with the build is the kind of thing App Review notices. The same

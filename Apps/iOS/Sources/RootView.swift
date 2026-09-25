@@ -35,6 +35,8 @@ struct RootView: View {
 struct FailureView: View {
     let message: String
     @Environment(AppModel.self) private var app
+    @Environment(\.theme) private var theme
+    @State private var isReconnecting = false
 
     /// Nothing went wrong when an account simply has no server — the heading
     /// decides whether the text below it reads as troubleshooting or as an
@@ -51,8 +53,55 @@ struct FailureView: View {
         } description: {
             Text(message)
         } actions: {
-            Button("Sign out") { app.signOut() }
+            // Which button leads, and which is the way back — the same rule
+            // the Mac uses.
+            //
+            // Normally Reconnect: something failed, trying again is the first
+            // thing to do, and signing out is the drastic option nobody should
+            // reach for first. With no server it is the other way round —
+            // reconnecting asks the same account the same question and gets
+            // the same answer, and the fix is to come back as somebody who
+            // owns one.
+            //
+            // `theme.accent`, not the system tint: every other emphasised
+            // thing in this app is that colour, and a stock blue button under
+            // a themed screen reads as something the app did not draw.
+            if isMissingServer {
+                Button("Sign out") { app.signOut() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.accent)
+
+                reconnectButton
+            } else {
+                reconnectButton
+                    .buttonStyle(.borderedProminent)
+
+                Button("Sign out") { app.signOut() }
+            }
         }
+    }
+
+    /// Retries the whole connection from scratch rather than whatever step
+    /// failed — see `retryConnection`'s own comment for why that is the more
+    /// useful behaviour, not a lesser one.
+    ///
+    /// Extracted so both arms above can place it without the body being
+    /// written twice, which is how the two would drift.
+    private var reconnectButton: some View {
+        Button {
+            isReconnecting = true
+            Task {
+                await app.retryConnection()
+                isReconnecting = false
+            }
+        } label: {
+            if isReconnecting {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("Reconnect")
+            }
+        }
+        .disabled(isReconnecting)
     }
 }
 
@@ -211,7 +260,7 @@ struct MainTabs: View {
         switch item {
         case .home: home.miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .books: LibraryView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
-        case .peoples: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
+        case .people: AuthorsView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .series: SeriesView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         case .genres: GenresView().miniPlayerInset(active: hasNowPlaying) { showingPlayer = true }
         }
@@ -497,16 +546,21 @@ enum MainTab: Hashable, CaseIterable {
     // library grid, and "browse" described the action rather than the
     // content — every other tab is just as much a way of browsing.
     //
-    // `peoples` rather than `authors` for the same reason. The tab holds both
+    // `people` rather than `authors` for the same reason. The tab holds both
     // authors and narrators behind a segmented switch, and naming it after
     // either one names half of what is there.
-    case home, books, peoples, series, genres
+    //
+    // `people`, not `peoples`. It is already the plural of `person`, the way
+    // `series` is already its own plural one tab along — `peoples` is the
+    // plural of a different word entirely, the one meaning a nation or an
+    // ethnic group.
+    case home, books, people, series, genres
 
     var title: String {
         switch self {
         case .home: "Home"
         case .books: "Books"
-        case .peoples: "Peoples"
+        case .people: "People"
         case .series: "Series"
         case .genres: "Genres"
         }
@@ -521,7 +575,7 @@ enum MainTab: Hashable, CaseIterable {
         // the books" and "books grouped by series", which stopped being
         // clear the moment the tab was actually named Books outright.
         case .books: "books.vertical"
-        case .peoples: "person.2"
+        case .people: "person.2"
         case .series: "square.stack"
         case .genres: "theatermasks"
         }

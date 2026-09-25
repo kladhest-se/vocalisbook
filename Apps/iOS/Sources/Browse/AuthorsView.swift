@@ -5,7 +5,7 @@ import PlatformShared
 /// Authors and narrators, from the cache, as one screen with a segmented
 /// switch rather than a sixth tab.
 ///
-/// The tab is called Peoples and holds both, so neither segment has to carry
+/// The tab is called People and holds both, so neither segment has to carry
 /// the whole tab's name.
 ///
 /// An author here is somebody the metadata agent credited with writing the
@@ -134,7 +134,7 @@ struct AuthorsView: View {
             .searchable(text: $search, prompt: mode == .authors ? "Author" : "Narrator")
             // The segment, not the tab.
             //
-            // The tab is Peoples and holds two kinds of them, so a fixed
+            // The tab is People and holds two kinds of them, so a fixed
             // header would name the container while the list underneath is
             // one or the other. Following `mode` means the header always says
             // what is actually on screen — Authors or Narrators — which is

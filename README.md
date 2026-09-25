@@ -78,8 +78,8 @@ Playback is direct play. Nothing is ever transcoded.
 
 ## Each platform in its own shape
 
-**iPhone and iPad** — Home, Books, Peoples, Series and Genres. Books is the whole
-library as a grid; the rest are ways into it, and Peoples holds authors and
+**iPhone and iPad** — Home, Books, People, Series and Genres. Books is the whole
+library as a grid; the rest are ways into it, and People holds authors and
 narrators behind a switch. Five tabs is also the ceiling — a sixth falls into iOS's own
 unthemed "More" screen, which the app's theme cannot reach. A mini player above
 the tab bar, a full player sheet, and a player that turns on its side when the
