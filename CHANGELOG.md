@@ -269,3 +269,7 @@ own: there is no 1.0.0 in the world for a 1.0.1 to follow.
   toolbar placement the sheet does not draw.
 - macOS: the chapter list at the bottom of a book sat under the player bar.
 - macOS: the player's cover and title open the book.
+- macOS: with "float above other apps" on, the app sat on top of Plex's own
+  sign-in page — "Waiting for you to approve this device…" covering the thing
+  you approve it with. Windows drop to the normal level while that page is
+  open and go back when it closes; the setting is untouched.

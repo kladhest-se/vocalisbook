@@ -32,6 +32,7 @@ public final class WebSignInPresenter: NSObject, ASWebAuthenticationPresentation
     public func present(_ url: URL) {
         cancel()
         expectingOurOwnCancel = false
+        suspendFloating()
 
         // No callback scheme: the Plex PIN flow does not redirect anywhere, so
         // there is nothing for the session to catch. Completion arrives only on
@@ -56,6 +57,7 @@ public final class WebSignInPresenter: NSObject, ASWebAuthenticationPresentation
         expectingOurOwnCancel = true
         session?.cancel()
         session = nil
+        restoreFloating()
     }
 
     /// Closes the page because the caller gave up.
@@ -63,6 +65,44 @@ public final class WebSignInPresenter: NSObject, ASWebAuthenticationPresentation
         expectingOurOwnCancel = true
         session?.cancel()
         session = nil
+        restoreFloating()
+    }
+
+    // MARK: - Getting out of the way
+
+    /// Whether this class lowered the windows and owes them a raise.
+    private var loweredWindows = false
+
+    /// Drops every window out of the floating level while the Plex page is up.
+    ///
+    /// "Float above other apps" puts this app's windows at `.floating`, and
+    /// `ASWebAuthenticationSession` presents its page as an ordinary window —
+    /// so with the setting on, signing in shows the app sitting on top of the
+    /// page it just asked somebody to use. The window says "Waiting for you to
+    /// approve this device…" over the thing they are meant to approve it with,
+    /// which reads as the app having hung.
+    ///
+    /// Suspended for the duration rather than turned off: the preference is
+    /// untouched and comes straight back when the page closes, so nobody has
+    /// to go and re-enable something they never disabled.
+    private func suspendFloating() {
+        guard MenuBarSettings.floatsAboveOtherApps, !loweredWindows else { return }
+        loweredWindows = true
+        MenuBarSettings.applyFloating(false)
+    }
+
+    /// Puts them back, if this class was what lowered them.
+    ///
+    /// Reads the preference again rather than trusting what it saw on the way
+    /// in: signing in can take minutes, and somebody who turned floating off in
+    /// settings while the page was open should not have it turned back on by a
+    /// page closing.
+    private func restoreFloating() {
+        guard loweredWindows else { return }
+        loweredWindows = false
+        if MenuBarSettings.floatsAboveOtherApps {
+            MenuBarSettings.applyFloating(true)
+        }
     }
 
 
@@ -94,8 +134,15 @@ public final class WebSignInPresenter: NSObject, ASWebAuthenticationPresentation
     }
 
     /// The session closed, for whatever reason.
+    ///
+    /// Including the reason `finish()` and `cancel()` never see: somebody
+    /// closing the Plex page themselves. Restoring here rather than only in
+    /// those two is what makes the suspension safe — miss this path and the
+    /// windows stay at the normal level until the next sign-in, and the
+    /// setting appears to have switched itself off.
     private func sessionEnded() {
         session = nil
+        restoreFloating()
         if !expectingOurOwnCancel {
             onDismissedByUser?()
         }

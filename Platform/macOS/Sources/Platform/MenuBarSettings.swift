@@ -66,6 +66,19 @@ public final class MenuBarSettings {
         }
     }
 
+    /// The stored preference, without an instance to hand.
+    ///
+    /// `WebSignInPresenter` has to drop the floating level while the Plex page
+    /// is up and put it back afterwards, and it has no reason to hold a
+    /// `MenuBarSettings` — reaching through `AppDelegate.settings` would make a
+    /// window-level detail depend on the app delegate having been wired up
+    /// first. Reading the same default the instance reads keeps the two
+    /// answers identical by construction.
+    @MainActor
+    public static var floatsAboveOtherApps: Bool {
+        UserDefaults.standard.bool(forKey: Key.floatsAboveOtherApps)
+    }
+
     private enum Key {
         static let style = "menuBar.style"
         static let staysResident = "menuBar.staysResident"
