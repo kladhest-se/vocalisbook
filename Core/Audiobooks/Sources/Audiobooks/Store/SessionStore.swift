@@ -12,6 +12,9 @@ import GRDB
 /// a position. So this is local, and syncs via CloudKit like bookmarks.
 public struct SessionStore: Sendable {
     private let database: AudiobookDatabase
+    // Process-local active ID: a store recreated after a crash must not credit
+    // the downtime by ending yesterday's session at today's wall clock.
+    private let activeSession = ActiveSession()
 
     public init(database: AudiobookDatabase) {
         self.database = database
@@ -36,35 +39,42 @@ public struct SessionStore: Sendable {
     public func begin(
         bookRatingKey: String, atMs: Int, rate: Float, sectionID: String?, now: Date = Date()
     ) throws -> String {
-        try closeOpenSessions(at: now)
-
         let id = UUID().uuidString
         try database.writer.write { db in
+            try Self.closeOpenSessions(db)
             try db.execute(
                 sql: """
                     INSERT INTO listening_session
                         (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate,
-                         revision, dirty, library_section_id)
-                    VALUES (?, ?, ?, NULL, ?, NULL, ?, 1, 1, ?)
+                         revision, dirty, library_section_id, origin_device_id)
+                    VALUES (?, ?, ?, NULL, ?, NULL, ?, 1, 1, ?,
+                            (SELECT identifier FROM local_device WHERE singleton = 1))
                     """,
                 arguments: [id, bookRatingKey, now, atMs, Double(rate), sectionID]
             )
+
         }
+        activeSession.set(id)
         return id
     }
 
     /// Closes the open session at a position.
     public func end(atMs: Int, now: Date = Date()) throws {
+        guard let id = activeSession.value else { return }
         try database.writer.write { db in
             try db.execute(
                 sql: """
                     UPDATE listening_session
                     SET ended_at = ?, end_ms = ?, revision = revision + 1, dirty = 1
                     WHERE ended_at IS NULL
+                      AND id = ?
+                      AND origin_device_id = (SELECT identifier FROM local_device WHERE singleton = 1)
                     """,
-                arguments: [now, atMs]
+                arguments: [now, atMs, id]
             )
+
         }
+        activeSession.set(nil)
     }
 
     /// A session with no end is one the app never got to close.
@@ -72,14 +82,13 @@ public struct SessionStore: Sendable {
     /// Closed at its own start rather than at `now`: the app may have been gone
     /// for days, and crediting all of that as listening would make the streak a
     /// lie. Zero length is the honest answer when the length is unknown.
-    private func closeOpenSessions(at now: Date) throws {
-        try database.writer.write { db in
-            try db.execute(sql: """
-                UPDATE listening_session
-                SET ended_at = started_at, end_ms = start_ms, revision = revision + 1, dirty = 1
-                WHERE ended_at IS NULL
-                """)
-        }
+    private static func closeOpenSessions(_ db: Database) throws {
+        try db.execute(sql: """
+            UPDATE listening_session
+            SET ended_at = started_at, end_ms = start_ms, revision = revision + 1, dirty = 1
+            WHERE ended_at IS NULL
+              AND origin_device_id = (SELECT identifier FROM local_device WHERE singleton = 1)
+            """)
     }
 
     // MARK: - Statistics
@@ -299,4 +308,11 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
     public let endMs: Int
 
     public var seconds: Int { max(0, Int(endedAt.timeIntervalSince(startedAt))) }
+}
+
+private final class ActiveSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private var id: String?
+    var value: String? { lock.lock(); defer { lock.unlock() }; return id }
+    func set(_ value: String?) { lock.lock(); defer { lock.unlock() }; id = value }
 }

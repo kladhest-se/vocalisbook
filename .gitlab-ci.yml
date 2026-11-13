@@ -1,0 +1,9 @@
+stages:
+  - test
+
+# Runs with a Docker-capable runner. Publishing remains an explicit local step.
+release-tools:
+  stage: test
+  image: python:3.12
+  script:
+    - python3 -B -m unittest discover -s Tests/ReleaseTools -b

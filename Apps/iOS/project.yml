@@ -1,7 +1,6 @@
 # XcodeGen spec for the iOS app.
 #
-# Copy to vocalisbook-ios/App/project.yml, then run `xcodegen` from that
-# directory. The .xcodeproj is generated and gitignored — do not commit it.
+# Run `make ios-project` from the repository root. The .xcodeproj is generated and gitignored — do not commit it.
 
 name: VocalisBook
 options:

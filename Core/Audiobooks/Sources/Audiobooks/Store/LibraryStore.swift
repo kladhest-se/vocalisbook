@@ -232,6 +232,8 @@ public struct LibraryStore: Sendable {
         )
 
         try database.writer.write { db in
+            try LocalBookState.prepare(bookKey: book.ratingKey,
+                identity: Self.identityKey(for: book, sectionID: sectionID), sectionID: sectionID, db: db)
             let record = BookRecord(
                 ratingKey: book.ratingKey,
                 librarySectionID: sectionID,
@@ -286,6 +288,11 @@ public struct LibraryStore: Sendable {
                 db,
                 bookRatingKey: book.ratingKey,
                 identityKey: Self.identityKey(for: book, sectionID: sectionID)
+            )
+            try CloudSyncStore(database: database).claimHeldRecords(
+                identity: Self.identityKey(for: book, sectionID: sectionID),
+                fallbackIdentity: "plex:\(sectionID.split(separator: ":").first.map(String.init) ?? sectionID):\(book.ratingKey)",
+                db: db
             )
 
             try TrackRecord
@@ -372,6 +379,8 @@ public struct LibraryStore: Sendable {
     ) throws {
         try database.writer.write { db in
             for book in books {
+                try LocalBookState.prepare(bookKey: book.ratingKey,
+                    identity: Self.identityKey(for: book, sectionID: sectionID), sectionID: sectionID, db: db)
                 let existing = try BookRecord.fetchOne(db, key: book.ratingKey)
                 let record = BookRecord(
                     ratingKey: book.ratingKey,
@@ -424,6 +433,11 @@ public struct LibraryStore: Sendable {
                     db,
                     bookRatingKey: book.ratingKey,
                     identityKey: Self.identityKey(for: book, sectionID: sectionID)
+                )
+                try CloudSyncStore(database: database).claimHeldRecords(
+                    identity: Self.identityKey(for: book, sectionID: sectionID),
+                    fallbackIdentity: "plex:\(sectionID.split(separator: ":").first.map(String.init) ?? sectionID):\(book.ratingKey)",
+                    db: db
                 )
             }
         }

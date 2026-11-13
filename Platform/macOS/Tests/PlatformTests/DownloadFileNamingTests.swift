@@ -10,7 +10,7 @@ import Testing
 ///
 /// They run from `Platform/macOS` because it is the only one of the three
 /// `swift test` can run: iOS and tvOS build against a generic simulator
-/// destination with nothing booted. `drift.sh` asserts the files under test are
+/// destination with nothing booted. `scripts/check-drift.py` asserts the files under test are
 /// byte-identical across the copies, so testing one is testing all three — which
 /// is worth more than the duplication costs, and is the first thing that
 /// duplication has ever paid for.

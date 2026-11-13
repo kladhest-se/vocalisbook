@@ -164,8 +164,7 @@ struct ArtworkCacheBehaviourTests {
     }
 }
 
-/// Counts fetches across the actor boundary. `OSAllocatedUnfairLock`, never
-/// `NSLock` — see the note in tests/README.md.
+/// Counts fetches safely across the actor boundary with an allocated unfair lock.
 private final class Counter: @unchecked Sendable {
     private let value = OSAllocatedUnfairLock(initialState: 0)
     func bump() { value.withLock { $0 += 1 } }

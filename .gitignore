@@ -23,3 +23,17 @@ build/
 # made of this port", and committing it would mean every build produces a diff
 # and two people building the same commit disagree about which build it is.
 Apps/*/build.number
+
+# Local audit/compiler caches and unsigned app builds
+.audit-cache/
+.build-apps/
+*.log
+
+# Release evidence, local settings and Python caches
+outputs/
+work/
+__pycache__/
+*.py[cod]
+release-config.local.json
+.env
+.env.*

@@ -83,8 +83,8 @@ public final class WebSignInPresenter: NSObject, ASWebAuthenticationPresentation
     /// `nonisolated` function makes the closure nonisolated too, and it hops to
     /// the main actor itself to touch anything here.
     ///
-    /// Third time in this project: AVPlayer KVO, `MPMediaItemArtwork`, and now
-    /// this. `tests/contract.sh` covers all three constructors.
+    /// AVPlayer KVO and `MPMediaItemArtwork` callbacks need the same explicit
+    /// isolation boundary; do not assume a framework calls on the main actor.
     private nonisolated static func completion(
         for presenter: WebSignInPresenter
     ) -> @Sendable (URL?, Error?) -> Void {

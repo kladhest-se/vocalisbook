@@ -1,5 +1,6 @@
 import UIKit
 import os
+import PlatformShared
 
 /// Asks the system for the silent pushes CloudKit sends.
 ///
@@ -42,6 +43,24 @@ public enum RemoteNotifications {
 /// delegate is an app no silent push can reach however correct its entitlements
 /// are.
 public final class PushDelegate: NSObject, UIApplicationDelegate {
+    public func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        BackgroundDownloadEvents.shared.handleEvents(
+            identifier: identifier, completionHandler: completionHandler
+        )
+        guard identifier == BackgroundDownloadEvents.sessionIdentifier else { return }
+        do {
+            try BackgroundDownloadCoordinator.reconnectForBackgroundEvents()
+        } catch {
+            Logger(subsystem: "se.kladhest.vocalisbook", category: "downloads")
+                .error("Could not reconnect background downloads: \(error.localizedDescription, privacy: .public)")
+            BackgroundDownloadEvents.shared.finishEvents()
+        }
+    }
+
     public func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]

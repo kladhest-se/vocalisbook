@@ -7,7 +7,7 @@ struct MenuBarStyleTests {
 
     /// A name that is not in the catalog draws nothing — no error, no
     /// placeholder — which is how the menu bar item came to be present,
-    /// clickable and invisible. `layout.sh` checks the catalog side; this checks
+    /// clickable and invisible. App builds compile the asset catalog; this checks
     /// that the names have not quietly changed.
     @Test("Each style names its own asset")
     func assetNames() {

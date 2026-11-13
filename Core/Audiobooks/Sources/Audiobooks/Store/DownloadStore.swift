@@ -22,7 +22,9 @@ public struct DownloadStore: Sendable {
         try database.writer.write { db in
             for segment in segments {
                 let existing = try DownloadRecord.fetchOne(db, key: segment.partCacheKey)
-                if existing?.state == DownloadRecord.State.complete.rawValue { continue }
+                if let existing, [DownloadRecord.State.complete.rawValue,
+                                  DownloadRecord.State.queued.rawValue,
+                                  DownloadRecord.State.downloading.rawValue].contains(existing.state) { continue }
 
                 let record = DownloadRecord(
                     partCacheKey: segment.partCacheKey,
@@ -81,6 +83,15 @@ public struct DownloadStore: Sendable {
                     DownloadRecord.State.failed.rawValue,
                 ].contains(Column("state")))
                 .fetchAll(db)
+        }
+    }
+
+    public func partCacheKeys(bookRatingKey: String? = nil) throws -> [String] {
+        try database.writer.read { db in
+            if let bookRatingKey {
+                return try String.fetchAll(db, sql: "SELECT part_cache_key FROM download WHERE book_rating_key = ?", arguments: [bookRatingKey])
+            }
+            return try String.fetchAll(db, sql: "SELECT part_cache_key FROM download")
         }
     }
 

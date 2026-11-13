@@ -5,10 +5,8 @@ import Testing
 /// The player's two arithmetic rules, which had no tests because they were
 /// written inside closures nothing could reach.
 ///
-/// `tests/README.md` has said for a long time that the player is the most
-/// intricate thing in the project and the least covered, and named queue
-/// rebuilding on a backwards seek and the sleep-timer fade specifically. Neither
-/// needs a device. They needed extracting.
+/// Queue rebuilding on a backwards seek and the sleep-timer fade can be tested
+/// without a device once their arithmetic is extracted from player callbacks.
 @Suite("Playback rules")
 struct PlaybackRulesTests {
 

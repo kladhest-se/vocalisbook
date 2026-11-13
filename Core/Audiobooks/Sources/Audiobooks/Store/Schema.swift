@@ -13,7 +13,7 @@ import GRDB
 /// Foreign keys are declared as an explicit column plus `.references(...)`
 /// rather than `belongsTo`, which derives a column name of its own. The records
 /// map every column by hand through CodingKeys, so a derived name is a name
-/// nothing reads — `tests/schema.sh` rejects `belongsTo` outright for that
+/// nothing reads — the schema tests rejects `belongsTo` outright for that
 /// reason, having first been written to guess at it and found the guess wrong.
 public enum Schema {
 
@@ -31,11 +31,13 @@ public enum Schema {
         registerV10(&migrator)
         registerV11(&migrator)
         registerV12(&migrator)
+        registerV13(&migrator)
+        registerV14(&migrator)
         return migrator
     }
 
     /// Current version, for logging and for the tvOS cache-validity check.
-    public static let currentVersion = "v12_refetch_tag_metadata"
+    public static let currentVersion = "v14_local_identity_and_session_owner"
 
     private static func registerV1(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v1_initial") { db in
@@ -616,4 +618,34 @@ public enum Schema {
             try db.execute(sql: "UPDATE book SET plex_updated_at = NULL")
         }
     }
+
+    /// Preserve cloud snapshots until their canonical book is available.
+    private static func registerV13(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v13_cloud_record_inbox") { db in
+            try db.create(table: "cloud_pending_record") { t in
+                t.primaryKey("record_name", .text)
+                t.column("book_identity", .text).notNull().indexed()
+                t.column("revision", .integer).notNull()
+                t.column("payload", .blob).notNull()
+            }
+        }
+    }
+    private static func registerV14(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v14_local_identity_and_session_owner") { db in
+            try db.create(table: "local_device") { t in
+                t.primaryKey("singleton", .integer)
+                t.column("identifier", .text).notNull()
+            }
+            let deviceID = UUID().uuidString
+            try db.execute(sql: "INSERT INTO local_device (singleton, identifier) VALUES (1, ?)", arguments: [deviceID])
+            try db.alter(table: "listening_session") { t in
+                t.add(column: "origin_device_id", .text).notNull().defaults(to: "legacy-remote")
+            }
+            // Dirty pre-upgrade sessions were created or edited here. Clean
+            // legacy rows have no trustworthy ownership and remain read-only.
+            try db.execute(sql: "UPDATE listening_session SET origin_device_id = ? WHERE dirty = 1", arguments: [deviceID])
+            try LocalBookState.quarantineOrphans(db)
+        }
+    }
+
 }

@@ -56,6 +56,7 @@ public actor CloudSyncDriver {
     /// next launch. Without it every start is a full fetch.
     private var stateSerialization: CKSyncEngine.State.Serialization?
     private var engine: CKSyncEngine?
+    private var isResetting = false
 
     /// The server's version of each record we have seen.
     ///
@@ -124,7 +125,10 @@ public actor CloudSyncDriver {
     /// The caller clears the local rows first. This side only forgets what it
     /// knew about the server.
     public func restartFromScratch() async {
+        guard !isResetting else { return }
+        let oldEngine = engine
         engine = nil
+        await oldEngine?.cancelOperations()
         knownRecords.removeAll()
         stateSerialization = nil
         status = Status()
@@ -133,7 +137,7 @@ public actor CloudSyncDriver {
     }
 
     public func start(stateSerialization: CKSyncEngine.State.Serialization? = nil) async {
-        guard engine == nil else { return }
+        guard engine == nil, !isResetting else { return }
 
         self.stateSerialization = stateSerialization
 
@@ -165,34 +169,41 @@ public actor CloudSyncDriver {
         await pushPending()
     }
 
-    /// Deletes everything this app has put in the container.
-    ///
-    /// The zone, not the records one by one: it is a single change, it cannot
-    /// half-succeed, and it takes anything a future version of this app might
-    /// have added without needing a list.
-    ///
-    /// Called when somebody removes this device's cached data. Without it the
-    /// purge looks like it did nothing — the local rows go, the engine fetches
-    /// the same records back a moment later, and the state that was being thrown
-    /// away reappears.
-    ///
-    /// The zone is queued for recreation straight after, so the next position
-    /// this device records has somewhere to go.
-    ///
-    /// **This is not device-local.** The container is shared, so the records
-    /// disappear for every device on the account. Another device still holding
-    /// its own copy will push it back, which is usually what somebody wants —
-    /// they are clearing a device, not abandoning their history — but it is not
-    /// an erase of the account and should not be described as one.
-    public func purgeCloudData() async {
-        guard let engine else { return }
-
+    /// Confirms deletion and recreation of the remote zone before removing
+    /// local listening data. On failure, keep local rows and leave sync stopped
+    /// so a retry cannot accidentally upload the state being erased.
+    public func purgeCloudData() async throws {
+        guard !isResetting else { throw ResetError.alreadyRunning }
+        isResetting = true
+        defer { isResetting = false }
+        let oldEngine = engine
+        engine = nil
+        await oldEngine?.cancelOperations()
         knownRecords.removeAll()
-        engine.state.add(pendingDatabaseChanges: [.deleteZone(Self.zoneID)])
-        engine.state.add(pendingDatabaseChanges: [
-            .saveZone(CKRecordZone(zoneID: Self.zoneID))
-        ])
+        stateSerialization = nil
+        onStateChanged?(nil)
+        status.isRunning = false
+        let database = self.database, zoneID = Self.zoneID, store = self.store
+        do {
+            try await CloudHistoryReset.perform(
+                deleteZone: {
+                    do { _ = try await database.deleteRecordZone(withID: zoneID) }
+                    catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
+                        // A retry after deletion already succeeded is idempotent.
+                    }
+                },
+                recreateZone: { _ = try await database.save(CKRecordZone(zoneID: zoneID)) },
+                clearLocal: { try store.clearListeningData() }
+            )
+            status.lastError = nil
+            status.lastActivity = Date()
+        } catch {
+            status.lastError = error.localizedDescription
+            throw error
+        }
     }
+
+    private enum ResetError: Error { case alreadyRunning }
 
     /// Asks the server for anything new, now.
     ///
@@ -269,6 +280,7 @@ public actor CloudSyncDriver {
 extension CloudSyncDriver: CKSyncEngineDelegate {
 
     public func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+        guard !isResetting, engine === syncEngine else { return }
         switch event {
         case .stateUpdate(let update):
             // Persisted by the caller, because this actor has nowhere to put it
@@ -277,10 +289,10 @@ extension CloudSyncDriver: CKSyncEngineDelegate {
             onStateChanged?(update.stateSerialization)
 
         case .fetchedRecordZoneChanges(let changes):
-            await apply(changes)
+            await apply(changes, from: syncEngine)
 
         case .sentRecordZoneChanges(let sent):
-            await markPushed(sent)
+            await markPushed(sent, from: syncEngine)
 
         case .accountChange(let change):
             // A different iCloud account is a different set of bookmarks. The
@@ -312,6 +324,7 @@ extension CloudSyncDriver: CKSyncEngineDelegate {
         _ context: CKSyncEngine.SendChangesContext,
         syncEngine: CKSyncEngine
     ) async -> CKSyncEngine.RecordZoneChangeBatch? {
+        guard !isResetting, engine === syncEngine else { return nil }
         let pending = (try? store.pendingChanges()) ?? []
         guard !pending.isEmpty else { return nil }
 
@@ -352,7 +365,8 @@ extension CloudSyncDriver: CKSyncEngineDelegate {
 @available(iOS 17.0, macOS 14.0, tvOS 17.0, *)
 extension CloudSyncDriver {
 
-    private func apply(_ changes: CKSyncEngine.Event.FetchedRecordZoneChanges) async {
+    private func apply(_ changes: CKSyncEngine.Event.FetchedRecordZoneChanges, from sourceEngine: CKSyncEngine) async {
+        guard !isResetting, engine === sourceEngine else { return }
         var incoming: [CloudRecord] = []
 
         for record in changes.modifications {
@@ -405,7 +419,8 @@ extension CloudSyncDriver {
         }
     }
 
-    private func markPushed(_ sent: CKSyncEngine.Event.SentRecordZoneChanges) async {
+    private func markPushed(_ sent: CKSyncEngine.Event.SentRecordZoneChanges, from sourceEngine: CKSyncEngine) async {
+        guard !isResetting, engine === sourceEngine else { return }
         // What the server accepted is now the version to build the next save on.
         for record in sent.savedRecords {
             knownRecords[record.recordID.recordName] = record
@@ -451,23 +466,30 @@ extension CloudSyncDriver {
             //
             // Asked for directly, since the error will not say.
             if let fetched = try? await database.record(for: failure.record.recordID) {
+                guard !isResetting, engine === sourceEngine else { return }
                 knownRecords[fetched.recordID.recordName] = fetched
                 retry.append(.saveRecord(fetched.recordID))
             }
         }
+        guard !isResetting, engine === sourceEngine else { return }
         if !retry.isEmpty {
             engine?.state.add(pendingRecordZoneChanges: retry)
         }
 
-        let names = Set(sent.savedRecords.map(\.recordID.recordName)
-                        + sent.deletedRecordIDs.map(\.recordName))
-        guard !names.isEmpty else { return }
+        do {
+            try Self.acknowledgeSavedRecords(sent.savedRecords, in: store)
+            // Includes newer edits made during the save, and the next page of
+            // dirty rows when more than one batch is waiting.
+            enqueuePending()
+        } catch {
+            status.lastError = error.localizedDescription
+        }
+    }
 
-        let pending = (try? store.pendingChanges()) ?? []
-        let confirmed = pending.filter { names.contains($0.recordName) }
-        guard !confirmed.isEmpty else { return }
-
-        try? store.markPushed(confirmed)
+    /// The server's saved revision, never a freshly read local revision.
+    /// Internal so the acknowledgement boundary can be exercised without iCloud.
+    static func acknowledgeSavedRecords(_ savedRecords: [CKRecord], in store: CloudSyncStore) throws {
+        try store.markPushed(savedRecords.compactMap(Self.cloudRecord(from:)))
     }
 
     /// Writes the local fields onto a record, which may be the server's.
@@ -477,6 +499,18 @@ extension CloudSyncDriver {
     static func apply(_ local: CloudRecord, to record: CKRecord) -> CKRecord {
         record["revision"] = local.revision as CKRecordValue
         record["isDeleted"] = (local.isDeleted ? 1 : 0) as CKRecordValue
+
+        // These are full snapshots. Keep unknown fields from future clients,
+        // but remove optional fields owned by this version when now absent.
+        let optionalFields: [CloudRecord.Kind: [String]] = [
+            .progress: ["finishedAt"],
+            .bookmark: ["label", "deletedAt", "bookIdentity"],
+            .bookSettings: ["rate"],
+            .listeningSession: ["endedAt", "endMs", "rate"],
+        ]
+        for key in optionalFields[local.kind] ?? [] where local.fields[key] == nil {
+            record[key] = nil
+        }
 
         for (key, value) in local.fields {
             switch value {
@@ -506,6 +540,10 @@ extension CloudSyncDriver {
 
         var fields: [String: CloudValue] = [:]
         for key in record.allKeys() where key != "revision" && key != "isDeleted" {
+            if Self.doubleFields.contains(key), let value = record[key] as? NSNumber {
+                fields[key] = .double(value.doubleValue)
+                continue
+            }
             switch record[key] {
             case let value as String: fields[key] = .string(value)
             case let value as Date: fields[key] = .date(value)
@@ -532,6 +570,7 @@ extension CloudSyncDriver {
             }
         }
 
+        guard record.recordID.recordName.hasPrefix("\(kind.rawValue)-") else { return nil }
         let id = String(record.recordID.recordName.dropFirst(kind.rawValue.count + 1))
 
         return CloudRecord(

@@ -225,7 +225,7 @@ final class AppModel {
     /// would be a cycle from an object to the thing that holds it.
     private func gatePlaybackWhenOffline() {
         player.canStartPlayback = { [weak self] in
-            guard let self else { return true }
+            guard let self, self.phase == .ready, !self.isClearingListeningHistory else { return false }
             guard isOffline, let timeline = player.timeline else { return true }
             guard !isFullyDownloaded(timeline.segments) else { return true }
 
@@ -363,6 +363,10 @@ final class AppModel {
     /// accident.
     private func resyncFromCloud() async {
         guard let database else { return }
+        guard !UserDefaults.standard.bool(forKey: "cloud.historyReset.pending") else {
+            storageFailure = "Clearing iCloud history did not finish. Retry Clear listening history before resyncing."
+            return
+        }
 
         save(while: "prepare this device for a resync") {
             try database.purgeSyncedUserData()
@@ -455,42 +459,41 @@ final class AppModel {
         }
     }
 
+    private(set) var isClearingListeningHistory = false
+
     func clearListeningHistory() {
-        // Stopped, not paused. The player holds a timeline for a book whose rows
-        // are about to disappear, and a pause keeps it — letting it report
-        // positions for something the database no longer knows about.
-        //
-        // This said "there is no `stop`" until there was one.
+        guard !isClearingListeningHistory, let database else { return }
+        isClearingListeningHistory = true
         player.stop()
-
         Task {
-            // iCloud first, and awaited: clearing the database while the
-            // container still holds the same records is a purge that undoes
-            // itself within seconds.
-            if iCloudSyncEnabled {
-                await cloud?.purgeCloudData()
+            defer { isClearingListeningHistory = false }
+            do {
+                if iCloudSyncEnabled {
+                    UserDefaults.standard.set(true, forKey: "cloud.historyReset.pending")
+                    let driver = cloud ?? CloudSyncDriver(
+                        store: CloudSyncStore(database: database),
+                        containerIdentifier: "iCloud.se.kladhest.vocalisbook"
+                    )
+                    cloud = driver
+                    try await driver.purgeCloudData()
+                } else {
+                    try database.purgeSyncedUserData()
+                }
+                UserDefaults.standard.removeObject(forKey: "cloud.state")
+                // Only a completed cloud reset may clear a pending cloud erase.
+                if iCloudSyncEnabled {
+                    UserDefaults.standard.removeObject(forKey: "cloud.historyReset.pending")
+                    cloud = nil
+                    await startCloudSync(database: database)
+                }
+                storageFailure = nil
+                cloudChanged()
+            } catch {
+                storageFailure = "Could not clear listening history. Your local data is kept. Retry Clear listening history. \(error.localizedDescription)"
             }
-
-            // The listening data only. The library stays.
-            //
-            // This used to call `purgeEverything`, which deletes the section row
-            // — and every book, track, chapter, genre and collection cascades
-            // from it. Clearing your history emptied Browse, Authors and Genres
-            // as well, and cost a full re-fetch of the whole library to get them
-            // back. Nothing about a listening record is stored in those tables.
-            save(while: "clear this device's history") {
-                try database.purgeSyncedUserData()
-            }
-
-            // The engine's own state goes too: its change tokens describe a zone
-            // that no longer exists.
-            UserDefaults.standard.removeObject(forKey: Self.cloudStateKey)
-
-            cloudChanged()
             await refreshCloudStatus()
         }
     }
-
 
     /// Something arrived from another device.
     ///
@@ -604,7 +607,7 @@ final class AppModel {
             Task { await startCloudSync(database: database) }
             bookmarks = BookmarkStore(database: database)
             downloadStore = DownloadStore(database: database)
-            downloads = BackgroundDownloadCoordinator(
+            downloads = BackgroundDownloadCoordinator.forApplication(
                 store: downloadStore,
                 allowsExpensiveNetwork: Self.allowsExpensiveDownloads
             )
@@ -635,7 +638,7 @@ final class AppModel {
         gatePlaybackWhenOffline()
         nowPlaying = NowPlayingController(player: player)
         player.onPositionChanged = { [weak self] bookRatingKey, absoluteMs in
-            guard let self else { return }
+            guard let self, self.phase == .ready else { return }
             // Movement means the book is not finished, whatever it was a moment
             // ago — resuming, seeking back, or starting another book all arrive
             // here first.
@@ -645,7 +648,7 @@ final class AppModel {
             }
         }
         player.onFinished = { [weak self] bookRatingKey in
-            guard let self else { return }
+            guard let self, self.phase == .ready else { return }
             self.sessionEnded = true
             try? self.sessions.end(atMs: self.player.absoluteMs)
             self.save(while: "mark this book finished") {
@@ -854,6 +857,8 @@ final class AppModel {
     }
 
     func signOut() {
+        player.stop()
+        try? sessions?.end(atMs: player.absoluteMs)
         nowPlayingReporter.stop(client: server, segment: { self.currentTimelineSegment })
         keychain.signOut()
         server = nil
@@ -1083,6 +1088,10 @@ final class AppModel {
 
     private func startCloudSync(database: AudiobookDatabase) async {
         guard iCloudSyncEnabled else { return }
+        guard !UserDefaults.standard.bool(forKey: "cloud.historyReset.pending") else {
+            storageFailure = "Clearing iCloud history did not finish. Your local data is kept. Retry Clear listening history when connected."
+            return
+        }
 
         // A crash-loop breaker, and the reason for it.
         //

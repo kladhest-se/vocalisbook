@@ -1,0 +1,18 @@
+{
+  "github": "https://github.com/kladhest-se/vocalisbook",
+  "github_git": "git@github.com:kladhest-se/vocalisbook.git",
+  "gitlab": "https://gitlab.example.com/your-group/vocalisbook",
+  "gitlab_git": "git@gitlab.example.com:your-group/vocalisbook.git",
+  "source_branch": "main",
+  "env": {},
+  "credentials": {
+    "github": {
+      "provider": "env",
+      "variable": "GITHUB_TOKEN"
+    },
+    "gitlab": {
+      "provider": "env",
+      "variable": "GITLAB_TOKEN"
+    }
+  }
+}

@@ -25,7 +25,8 @@ is presumably in place. Kept here as things to confirm rather than to do — an
 update is exactly when a setting nobody has looked at since the first submission
 goes unexamined.
 
-**Push Notifications on the App ID.** Granted for `se.kladhest.vocalisbook`, or
+**Push Notifications on the App ID.** Granted for the effective app identifier (currently
+`se.kladhest.vocalisbook.VocalisBook` from the generated project), or
 signing fails with a profile that does not match the entitlement. This one
 announces itself: the archive will not sign.
 
@@ -230,13 +231,18 @@ Publishable as-is at a URL of your choosing.
   the number in `Config` runs ahead of it during development, which is why this
   step exists at all.
 
-  Named rather than written as `<version>`: `layout.sh` reads
-  `MARKETING_VERSION` out of `Config/iOS.xcconfig` and checks that this file
-  says it, so a placeholder fails the gate.
+  Compare the release version against `MARKETING_VERSION` in each platform's
+  xcconfig; this is a release check rather than a separate external script.
 - `make <port>-archive` bumps the build number and passes it to
   `xcodebuild archive` directly — Xcode's own Archive action alone would carry
   the deliberate `1` sentinel instead.
-- `make publish-all` passes, including the tests.
+- `make check` and `make build` pass, followed by the simulator/device tests
+  appropriate to the release (`make test`).
 - A real device has run the build, not only a simulator.
 - Sync has been checked between two devices — pause on one, and the other should
   follow within a second or two.
+
+
+See the [release checklist](release-checklist.md) for outstanding account/asset work,
+[CloudKit setup and schema](cloudkit.md) for a reproducible container setup, and
+[license notices](../NOTICE.md) for redistribution terms.

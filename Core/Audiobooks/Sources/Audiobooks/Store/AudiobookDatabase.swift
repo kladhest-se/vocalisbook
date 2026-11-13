@@ -106,6 +106,7 @@ public final class AudiobookDatabase: Sendable {
             try db.execute(sql: "DELETE FROM outbox")
             try db.execute(sql: "DELETE FROM download")
             try db.execute(sql: "DELETE FROM cloud_progress")
+            try db.execute(sql: "DELETE FROM cloud_pending_record")
 
             // So the next refresh is a full one rather than an incremental sync
             // against a stamp describing a library that is no longer here.
@@ -129,12 +130,15 @@ public final class AudiobookDatabase: Sendable {
             try db.execute(sql: "DELETE FROM book_settings")
             try db.execute(sql: "DELETE FROM listening_session")
             try db.execute(sql: "DELETE FROM outbox")
+            try db.execute(sql: "DELETE FROM cloud_progress")
+            try db.execute(sql: "DELETE FROM cloud_pending_record")
         }
     }
 
 
     public func purgeMetadataCache() throws {
         try writer.write { db in
+            try LocalBookState.detachAll(db)
             try db.execute(sql: "DELETE FROM library_section")
         }
     }

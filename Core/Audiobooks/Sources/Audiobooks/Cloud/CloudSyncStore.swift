@@ -8,12 +8,9 @@ import GRDB
 /// `CKSyncEngine` and speaks to this in `CloudRecord`s, the same seam
 /// `HTTPClient` draws for the network.
 ///
-/// **The conflict rule is the revision number, and nothing else.** Every store
-/// that edits a syncable row bumps `revision` and sets `dirty`; those columns
-/// have been in the schema since the first migration and until now nothing read
-/// them. A higher revision wins. Timestamps are not used: two devices with
-/// clocks a minute apart produce a merge that depends on whose clock is fast,
-/// and the failure is silent and unreproducible.
+/// Progress is ordered by its change timestamp, with revision as a tie-breaker.
+/// Bookmarks, settings and sessions are ordered by revision. Dirty flags are
+/// acknowledged only for the exact revision saved by the remote service.
 public struct CloudSyncStore: Sendable {
 
     private let database: AudiobookDatabase
@@ -26,6 +23,10 @@ public struct CloudSyncStore: Sendable {
         // matches; a second copy of that SQL here would be two implementations
         // of one rule, and they would not stay the same.
         self.bookmarks = BookmarkStore(database: database)
+    }
+
+    public func clearListeningData() throws {
+        try database.purgeSyncedUserData()
     }
 
     // MARK: - Outgoing
@@ -118,7 +119,8 @@ public struct CloudSyncStore: Sendable {
                        listening_session.start_ms AS start_ms,
                        listening_session.end_ms AS end_ms,
                        listening_session.rate AS rate,
-                       listening_session.revision AS revision
+                       listening_session.revision AS revision,
+                       listening_session.origin_device_id AS origin_device_id
                 FROM listening_session
                 JOIN book ON book.rating_key = listening_session.book_rating_key
                 WHERE listening_session.dirty = 1 AND book.identity_key IS NOT NULL
@@ -237,15 +239,22 @@ public struct CloudSyncStore: Sendable {
         // older version would have sent. A rating key from another server names
         // whatever book happens to hold that number here, which is worse than
         // not attaching the bookmark at all.
-        let namedBook = try record.fields["bookIdentity"]?.stringValue
-            .flatMap { try Self.localBook(for: $0, db: db) }
-            ?? record.fields["bookRatingKey"]?.stringValue
+        let namedBook: String?
+        if let identity = record.fields["bookIdentity"]?.stringValue {
+            namedBook = try Self.localBook(for: identity, db: db)
+            if namedBook == nil {
+                return try holdRecord(record, bookIdentity: identity, db: db)
+            }
+        } else {
+            // Compatibility with records written before portable identities.
+            namedBook = record.fields["bookRatingKey"]?.stringValue
+        }
 
         let bookmark = BookmarkRecord(
             id: record.id,
             bookRatingKey: namedBook ?? existing?.bookRatingKey ?? "",
             absoluteMs: record.fields["absoluteMs"]?.intValue ?? existing?.absoluteMs ?? 0,
-            label: record.fields["label"]?.stringValue ?? existing?.label,
+            label: record.fields["label"]?.stringValue,
             createdAt: record.fields["createdAt"]?.dateValue ?? existing?.createdAt ?? Date(),
             revision: record.revision,
             // Applying a remote change must never mark the row dirty. It would
@@ -309,8 +318,9 @@ public struct CloudSyncStore: Sendable {
 
     /// Writes an arriving position, if it is newer than what is here.
     ///
-    /// Compared by time, which is the same clock on every device. A revision is
-    /// a per-device counter and orders nothing across them.
+    /// Compared by the originating device's change time. Device clock skew can
+    /// affect this ordering; a per-device revision alone cannot order progress
+    /// across devices. Equal timestamps use revision as a tie-breaker.
     private func writeProgress(
         bookRatingKey: String,
         absoluteMs: Int,
@@ -399,11 +409,10 @@ public struct CloudSyncStore: Sendable {
         // rating key before anything is read or written. A settings row keyed by
         // another server's number is a playback speed applied to the wrong book.
         //
-        // Not held for later like a position: a speed is a preference, and one
-        // for a book this device does not have is worth less than the row it
-        // would take to remember it.
+        // Like bookmarks, preferences can arrive before the library. Keep the
+        // identity and replay the snapshot when the matching book is cached.
         guard let bookRatingKey = try Self.localBook(for: record.id, db: db) else {
-            return false
+            return try holdRecord(record, bookIdentity: record.id, db: db)
         }
 
         let existing = try Row.fetchOne(
@@ -448,9 +457,15 @@ public struct CloudSyncStore: Sendable {
         // Identity first, rating key as what an older device would have sent
         // — a rating key from another server names whatever book happens to
         // hold that number here.
-        let bookRatingKey = (try record.fields["bookIdentity"]?.stringValue
-            .flatMap { try Self.localBook(for: $0, db: db) })
-            ?? record.fields["bookRatingKey"]?.stringValue ?? ""
+        let bookRatingKey: String
+        if let identity = record.fields["bookIdentity"]?.stringValue {
+            guard let resolved = try Self.localBook(for: identity, db: db) else {
+                return try holdRecord(record, bookIdentity: identity, db: db)
+            }
+            bookRatingKey = resolved
+        } else {
+            bookRatingKey = record.fields["bookRatingKey"]?.stringValue ?? ""
+        }
 
         // The section this device currently has open has nothing to do with
         // which library a session from another device actually belongs to
@@ -470,8 +485,8 @@ public struct CloudSyncStore: Sendable {
         try db.execute(sql: """
             INSERT INTO listening_session
                 (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate,
-                 revision, dirty, library_section_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                 revision, dirty, library_section_id, origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 book_rating_key = excluded.book_rating_key,
                 started_at = excluded.started_at,
@@ -481,7 +496,8 @@ public struct CloudSyncStore: Sendable {
                 rate = excluded.rate,
                 revision = excluded.revision,
                 dirty = 0,
-                library_section_id = excluded.library_section_id
+                library_section_id = excluded.library_section_id,
+                origin_device_id = excluded.origin_device_id
             """, arguments: [
                 record.id,
                 bookRatingKey,
@@ -492,6 +508,7 @@ public struct CloudSyncStore: Sendable {
                 record.fields["rate"]?.doubleValue,
                 record.revision,
                 librarySectionID,
+                record.fields["originDeviceID"]?.stringValue ?? "remote:\(record.id)",
             ])
         return true
     }
@@ -512,6 +529,46 @@ public struct CloudSyncStore: Sendable {
             sql: "DELETE FROM cloud_progress WHERE changed_at < ?",
             arguments: [cutoff]
         )
+    }
+
+    /// Keep full records until their canonical book is cached. These are user
+    /// data, so unlike the progress cache they are not expired by wall clock.
+    private func holdRecord(_ record: CloudRecord, bookIdentity: String, db: Database) throws -> Bool {
+        let oldRevision = try Int.fetchOne(db, sql:
+            "SELECT revision FROM cloud_pending_record WHERE record_name = ?",
+            arguments: [record.recordName])
+        if let oldRevision, oldRevision > record.revision { return false }
+        let payload = try JSONEncoder().encode(record)
+        try db.execute(sql: """
+            INSERT INTO cloud_pending_record (record_name, book_identity, revision, payload)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(record_name) DO UPDATE SET
+                book_identity = excluded.book_identity,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """, arguments: [record.recordName, bookIdentity, record.revision, payload])
+        return true
+    }
+
+    /// Runs inside the same transaction that caches a book, so an interrupted
+    /// library refresh cannot consume an inbox entry without attaching it.
+    func claimHeldRecords(identity: String, fallbackIdentity: String, db: Database) throws {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT record_name, payload FROM cloud_pending_record
+            WHERE book_identity IN (?, ?)
+            """, arguments: [identity, fallbackIdentity])
+        for row in rows {
+            let payload: Data = row["payload"]
+            let record = try JSONDecoder().decode(CloudRecord.self, from: payload)
+            switch record.kind {
+            case .bookmark: _ = try applyBookmark(record, db: db)
+            case .listeningSession: _ = try applySession(record, db: db)
+            case .bookSettings: _ = try applySettings(record, db: db)
+            case .progress: continue
+            }
+            try db.execute(sql: "DELETE FROM cloud_pending_record WHERE record_name = ?",
+                           arguments: [row["record_name"] as String])
+        }
     }
 
     /// Turns a book identity into this device's rating key.
@@ -553,14 +610,21 @@ public struct CloudSyncStore: Sendable {
 
         return try Row.fetchOne(
             db,
-            sql: "SELECT rating_key FROM book WHERE rating_key = ?",
-            arguments: [String(parts[2])]
+            sql: """
+                SELECT book.rating_key FROM book
+                JOIN library_section ON library_section.id = book.library_section_id
+                WHERE book.rating_key = ? AND library_section.server_id = ?
+                """,
+            arguments: [String(parts[2]), String(parts[1])]
         )?["rating_key"] as String?
     }
 
     /// The identity a book travels under, or nil when it is not cached.
     static func identity(forBook ratingKey: String, db: Database) throws -> String? {
-        try Row.fetchOne(
+        if ratingKey.hasPrefix(LocalBookState.prefix) {
+            return String(ratingKey.dropFirst(LocalBookState.prefix.count))
+        }
+        return try Row.fetchOne(
             db,
             sql: "SELECT identity_key FROM book WHERE rating_key = ?",
             arguments: [ratingKey]
@@ -599,6 +663,7 @@ public struct CloudSyncStore: Sendable {
             // unreadable to them.
             "bookIdentity": .string(row["identity_key"]),
             "bookRatingKey": .string(row["book_rating_key"]),
+            "originDeviceID": .string(row["origin_device_id"]),
             "startedAt": .date(row["started_at"]),
             "startMs": .int(row["start_ms"]),
         ]

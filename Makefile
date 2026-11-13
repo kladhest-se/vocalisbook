@@ -4,8 +4,7 @@
 # `make macos-build`. The unprefixed ones act on everything that is not an app:
 # `make packages` builds and tests Core and all three Platform packages.
 #
-# vocalisbook-tools/tests/app.sh and the publish checks call these rather than
-# duplicating xcodebuild invocations.
+# Local development and .github/workflows/ci.yml use these targets.
 
 .PHONY: help packages core platforms test lint clean 	
 	ios-project ios-build ios-test ios-run ios-install ios-destinations \
@@ -39,6 +38,13 @@ help:
 	@echo "  install needs TEAM_ID and DEVICE, both from the two lists above:"
 	@echo "    make ipados-install DEVICE=00008132-… TEAM_ID=ABCDE12345"
 	@echo ""
+	@echo "  make release-plan      preview source/website release checks"
+	@echo "  make release-build     validate and package a repository release"
+	@echo "  make release-tests     offline GitLab/GitHub release-tool tests"
+	@echo "  make release-prepare   freeze notes, destinations and upload hashes"
+	@echo "  make release-source    source push; use RELEASE_ARGS='--dry-run' first"
+	@echo "  make release-publish   explicit manifest-based publication"
+	@echo "  make website-package   validate and package the PHP site"
 	@echo "  make clean             remove generated projects and build products"
 
 # Core declares every platform, so it builds for the host like any package and
@@ -139,7 +145,7 @@ test: packages ios-test macos-test tvos-test
 #
 # `awk` rather than `grep` and `sed`, because the file names need reshaping as
 # they stream and `sed` disagrees about how to do that unbuffered — BSD wants
-# `-l`, GNU wants `-u`, and `tests/run.sh` refuses a script that picks one.
+# `-l`, GNU wants `-u`, and the CI checks refuses a script that picks one.
 # `awk` needs neither: `fflush()` after each line is portable and explicit.
 #
 # Both compilers are handled because they say it differently: SwiftPM writes
@@ -163,7 +169,7 @@ test: packages ios-test macos-test tvos-test
 #
 # Spelled as a full template with XXXXXX rather than `mktemp -t vocalisbook-lint`.
 # The short form works on this Mac and fails on GNU coreutils, which wants the
-# X's — and `tests/run.sh` refuses a script that depends on one platform's
+# X's — and the CI checks refuses a script that depends on one platform's
 # behaviour for exactly this reason.
 lint:
 	@log=$$(mktemp "$${TMPDIR:-/tmp}/vocalisbook-lint.XXXXXX"); \
@@ -892,3 +898,48 @@ macos-archive: macos-project
 macos-destinations:
 	@xcodebuild -project $(MACOS_PROJECT) -scheme VocalisBook -showdestinations 2>/dev/null \
 		| sed -n '/Available destinations/,/^$$/p'
+
+# Reproducible checks included with this repository.
+.PHONY: drift check
+
+drift:
+	python3 scripts/check-drift.py
+
+check: drift core platforms
+
+# Repository releases: source + website; App Store archives stay platform-specific.
+PYTHON ?= python3
+RELEASE_ARGS ?=
+.PHONY: release release-build release-plan release-check release-prepare release-publish release-source release-tests website-check website-package dist
+
+release: release-build
+
+release-build:
+	"$(PYTHON)" -B scripts/release.py build $(RELEASE_ARGS)
+
+release-plan:
+	"$(PYTHON)" -B scripts/release.py plan $(RELEASE_ARGS)
+
+release-check:
+	"$(PYTHON)" -B scripts/release.py check $(RELEASE_ARGS)
+
+release-prepare:
+	"$(PYTHON)" -B scripts/release.py prepare $(RELEASE_ARGS)
+
+release-publish:
+	"$(PYTHON)" -B scripts/release.py publish $(RELEASE_ARGS)
+
+release-source:
+	"$(PYTHON)" -B scripts/release.py source $(RELEASE_ARGS)
+
+release-tests:
+	"$(PYTHON)" -B -m unittest discover -s Tests/ReleaseTools -b
+
+website-check:
+	"$(PYTHON)" -B scripts/check_web.py
+
+website-package: website-check
+	"$(PYTHON)" -B scripts/website_package.py
+
+dist:
+	"$(PYTHON)" -B scripts/source_release.py

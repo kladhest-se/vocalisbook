@@ -202,7 +202,7 @@ struct DownloadsView: View {
 ///
 /// Its own copy rather than shared with the phone's: the two apps are separate
 /// targets with no code between them but `Core` and `Platform`, and a type this
-/// small is not worth a package. `drift.sh` does not guard it because the two are
+/// small is not worth a package. `scripts/check-drift.py` does not guard it because the two are
 /// allowed to differ — the Mac shows sizes in a grid, the phone in a sheet.
 struct OfflineEntry: Identifiable {
     let book: BookRecord

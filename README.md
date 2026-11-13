@@ -46,7 +46,8 @@ playback. You do not get narrators, series order, language, edition, or progress
 that survives moving to a different Plex server.
 
 VocalisMeta runs inside Plex Media Server. Nothing else is needed, and the app
-never contacts Audible, Open Library or anything else — only your Plex server.
+never contacts Audible or Open Library. It contacts Plex services for sign-in,
+discovery and your library, plus iCloud when cloud sync is enabled.
 
 ## What it does
 
@@ -107,6 +108,11 @@ the book is the album, and a file is a track.
 
 ## Building
 
+Full Xcode with Swift tools 6.0+, Python 3 and XcodeGen are required. The audit
+fixes were built with Xcode 27.2 and XcodeGen 2.46.0. See [build prerequisites,
+CI and simulator setup](Docs/building.md), [CloudKit development setup](Docs/cloudkit.md)
+and [data recovery](Docs/data-recovery.md) before working with a personal library.
+
     brew install xcodegen
 
 Xcode projects are generated from each app's `project.yml` and are not committed.
@@ -117,6 +123,8 @@ Edit the `project.yml`, never the `.xcodeproj`.
     make build          compile all three apps
     make test           every test that runs without a device
     make core           Core and Platform/Shared only — no simulator, fastest
+    make check          drift checks, core tests and all platform packages
+    make drift          verify intentionally copied platform files
     make help           everything else
 
 ### iPhone and iPad
@@ -292,3 +300,14 @@ The site is one PHP file, in `public-web/`, served from this repository.
 VocalisBook is free, and stays free. If it is useful to you:
 
 [![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-73a9f5?logo=ko-fi&logoColor=white)](https://ko-fi.com/R7P325M7NE)
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [release checklist](Docs/release-checklist.md).
+Original project code and assets are licensed under **GPL-3.0-or-later**; see
+[LICENSE](LICENSE) and [third-party notices](NOTICE.md). Third-party content keeps
+its own rights and terms.
+
+## Repository releases
+
+The adapted ZIFburn/BitSkim tooling pushes source and publishes annotated tags, release notes and verified source/website archives to GitLab and GitHub. Start with `make release-plan`; see [the release guide](Docs/RELEASING.md) for external project settings, credentials, initialization, preparation and explicit publication. `make release` builds/packages only. Signed App Store archives remain the existing per-platform commands.

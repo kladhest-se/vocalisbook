@@ -2,6 +2,7 @@ import Foundation
 import os
 import UniformTypeIdentifiers
 import Audiobooks
+import PlatformShared
 
 /// Fetches book files and puts them where the player can find them.
 ///
@@ -25,9 +26,40 @@ import Audiobooks
 @Observable
 public final class BackgroundDownloadCoordinator {
 
+    // A background-only launch can precede the first SwiftUI scene. Retain and
+    // reuse that session when the app model later starts; two sessions with the
+    // same background identifier cannot both own the system's callbacks.
+    private static var applicationCoordinator: BackgroundDownloadCoordinator?
+
+    public static func forApplication(
+        store: DownloadStore, allowsExpensiveNetwork: Bool = false
+    ) -> BackgroundDownloadCoordinator {
+        if let applicationCoordinator { return applicationCoordinator }
+        let coordinator = BackgroundDownloadCoordinator(
+            store: store, allowsExpensiveNetwork: allowsExpensiveNetwork
+        )
+        applicationCoordinator = coordinator
+        return coordinator
+    }
+
+    public static func reconnectForBackgroundEvents() throws {
+        if applicationCoordinator == nil {
+            let database = try StoreLocation.open()
+            _ = forApplication(
+                store: DownloadStore(database: database),
+                allowsExpensiveNetwork: UserDefaults.standard.bool(
+                    forKey: "downloads.allowExpensiveNetwork"
+                )
+            )
+        }
+        applicationCoordinator?.resumeAfterLaunch()
+    }
+
     private let store: DownloadStore
     private let delegate: DownloadDelegate
     private let session: URLSession
+    private let gate: DownloadTaskGate
+    private let transfers: DownloadTransferQueue
 
     /// Bumped whenever a transfer moves, so views can watch one value.
     public private(set) var revision = 0
@@ -45,10 +77,12 @@ public final class BackgroundDownloadCoordinator {
     public init(store: DownloadStore, allowsExpensiveNetwork: Bool = false) {
         self.store = store
         self.allowsExpensiveNetwork = allowsExpensiveNetwork
-        self.delegate = DownloadDelegate(store: store)
+        let gate = DownloadTaskGate()
+        self.gate = gate
+        self.delegate = DownloadDelegate(store: store, gate: gate)
 
         let configuration = URLSessionConfiguration.background(
-            withIdentifier: "se.kladhest.vocalisbook.downloads"
+            withIdentifier: BackgroundDownloadEvents.sessionIdentifier
         )
         configuration.isDiscretionary = false
         configuration.sessionSendsLaunchEvents = true
@@ -69,12 +103,22 @@ public final class BackgroundDownloadCoordinator {
         // wrong instrument anyway. These two flags are.
         configuration.allowsExpensiveNetworkAccess = allowsExpensiveNetwork
         configuration.allowsConstrainedNetworkAccess = allowsExpensiveNetwork
-        self.session = URLSession(
+        let session = URLSession(
             configuration: configuration,
             delegate: delegate,
             delegateQueue: nil
         )
 
+        self.session = session
+        self.transfers = DownloadTransferQueue(gate: gate) {
+            await session.allTasks.map { task in
+                DownloadTransferQueue.Transfer(
+                    key: task.taskDescription, id: task.taskIdentifier,
+                    isActive: task.state == .running || task.state == .suspended,
+                    cancel: { task.cancel() }
+                )
+            }
+        }
         delegate.onChange = { [weak self] in self?.revision += 1 }
     }
 
@@ -141,13 +185,14 @@ public final class BackgroundDownloadCoordinator {
     ) throws {
         try store.enqueue(bookRatingKey: bookRatingKey, segments: segments)
 
-        for segment in segments {
-            guard localURL(forPartCacheKey: segment.partCacheKey) == nil else { continue }
-            let task = session.downloadTask(with: urlForSegment(segment))
-            // The only way to know which part a finished task belongs to: the
-            // delegate is handed a task, not a request, and a background task
-            // may be delivered after a relaunch when nothing else remains.
-            task.taskDescription = segment.partCacheKey
+        let urls = Dictionary(segments.map { ($0.partCacheKey, urlForSegment($0)) },
+                              uniquingKeysWith: { first, _ in first })
+        transfers.enqueue(keys: segments.map(\.partCacheKey)) { [weak self] key in
+            guard let self, (try? self.store.record(partCacheKey: key)) != nil,
+                  self.localURL(forPartCacheKey: key) == nil, let url = urls[key] else { return }
+            let task = self.session.downloadTask(with: url)
+            task.taskDescription = key
+            self.gate.register(id: task.taskIdentifier, key: key)
             task.resume()
         }
         revision += 1
@@ -155,6 +200,8 @@ public final class BackgroundDownloadCoordinator {
 
     /// Removes a book's files and forgets them.
     public func evict(bookRatingKey: String) throws {
+        let keys = try store.partCacheKeys(bookRatingKey: bookRatingKey)
+        transfers.cancel(keys: Set(keys))
         let paths = try store.evict(bookRatingKey: bookRatingKey)
         let directory = try Self.downloadsDirectory()
         for path in paths {
@@ -173,6 +220,7 @@ public final class BackgroundDownloadCoordinator {
     /// computes. Reaching past it meant calling `evict(partCacheKey:)`, which is
     /// the protocol's method and takes a different kind of key entirely.
     public func evictAll() throws {
+        transfers.cancelAll(knownKeys: Set(try store.partCacheKeys()))
         let paths = try store.evictAll()
         let directory = try Self.downloadsDirectory()
         for path in paths {
@@ -222,9 +270,9 @@ public final class BackgroundDownloadCoordinator {
 /// The delegate.
 ///
 /// Deliberately a separate object, and deliberately not `@MainActor`: the
-/// session calls it on its own queue. Everything that touches the store hops to
-/// the main actor by way of a `Task`, and nothing here uses `assumeIsolated` —
-/// that traps rather than recovering, and the assumption would be false.
+/// session calls it on its serial delegate queue. The Sendable store commits
+/// synchronously there; only UI notifications hop to the main actor. This keeps
+/// database writes ahead of the system's background-completion handoff.
 private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 
     /// What to call the file on disk.
@@ -250,13 +298,15 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
     }
 
     private let store: DownloadStore
+    private let gate: DownloadTaskGate
     /// Isolated to the main actor, because what it does is mutate a property
     /// that lives there. The delegate already calls it from inside a
     /// `Task { @MainActor }`; this makes the type say so.
     var onChange: (@MainActor @Sendable () -> Void)?
 
-    init(store: DownloadStore) {
+    init(store: DownloadStore, gate: DownloadTaskGate) {
         self.store = store
+        self.gate = gate
         super.init()
     }
 
@@ -284,8 +334,9 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
         // it has to be moved now, synchronously, on this queue — not after a
         // hop to the main actor.
         do {
+            try DownloadResponseValidation.validate(downloadTask.response)
             let directory = try BackgroundDownloadCoordinator.downloadsDirectory()
-            let relative = "\(key).\(Self.fileExtension(for: downloadTask))"
+            let relative = "\(key)-\(downloadTask.taskIdentifier).\(Self.fileExtension(for: downloadTask))"
             let destination = directory.appendingPathComponent(relative)
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: location, to: destination)
@@ -294,18 +345,21 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
             let bytes = (attributes?[.size] as? Int) ?? 0
             let store = self.store
             let onChange = self.onChange
-            Task { @MainActor in
-                try? store.markComplete(partCacheKey: key, relativePath: relative, bytes: bytes)
-                onChange?()
+            // Commit before URLSession announces that its background events
+            // are finished; the system may suspend us after that handoff.
+            let accepted = try gate.performIfCurrent(id: downloadTask.taskIdentifier, key: key) {
+                try store.markComplete(partCacheKey: key, relativePath: relative, bytes: bytes)
             }
+            if !accepted { try? FileManager.default.removeItem(at: destination); return }
+            Task { @MainActor in onChange?() }
         } catch {
             let store = self.store
             let onChange = self.onChange
             let message = error.localizedDescription
-            Task { @MainActor in
-                try? store.markFailed(partCacheKey: key, error: message)
-                onChange?()
+            _ = try? gate.performIfCurrent(id: downloadTask.taskIdentifier, key: key) {
+                try store.markFailed(partCacheKey: key, error: message)
             }
+            Task { @MainActor in onChange?() }
         }
     }
 
@@ -321,10 +375,14 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
         let total = totalBytesExpectedToWrite > 0 ? Int(totalBytesExpectedToWrite) : nil
         let store = self.store
         let onChange = self.onChange
-        Task { @MainActor in
-            try? store.markDownloading(partCacheKey: key, bytesDone: done, bytesTotal: total)
-            onChange?()
+        _ = try? gate.performIfCurrent(id: downloadTask.taskIdentifier, key: key) {
+            try store.markDownloading(partCacheKey: key, bytesDone: done, bytesTotal: total)
         }
+        Task { @MainActor in onChange?() }
+    }
+
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        Task { @MainActor in BackgroundDownloadEvents.shared.finishEvents() }
     }
 
     func urlSession(
@@ -346,10 +404,10 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
         // question worth answering is which.
         Logger(subsystem: "se.kladhest.vocalisbook", category: "downloads")
             .error("Download failed for \(key, privacy: .public): \(message, privacy: .public)")
-        Task { @MainActor in
-            try? store.markFailed(partCacheKey: key, error: message)
-            onChange?()
+        _ = try? gate.performIfCurrent(id: task.taskIdentifier, key: key) {
+            try store.markFailed(partCacheKey: key, error: message)
         }
+        Task { @MainActor in onChange?() }
     }
 }
 
@@ -363,7 +421,7 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
 ///
 /// Tested from `Platform/macOS`, which is the only one of the three platform
 /// packages `swift test` can run — iOS and tvOS build against a generic
-/// simulator destination with nothing booted. `drift.sh` asserts this file is
+/// simulator destination with nothing booted. `scripts/check-drift.py` asserts this file is
 /// byte-identical across the copies, so testing one covers all of them.
 enum DownloadFileNaming {
 

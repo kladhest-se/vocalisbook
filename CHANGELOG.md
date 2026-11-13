@@ -4,6 +4,33 @@
 
 The first release. Everything below is new.
 
+### Repository release tooling — 13 November 2026
+
+- Integrate the ZIFburn/BitSkim release workflow for source pushes, annotated tags and resumable GitLab/GitHub releases.
+- Package reproducible source and PHP website archives with provenance, exact inventories and SHA-256 verification.
+- Keep destinations and credential references in the external git-release project settings; support environment variables and 1Password references.
+- Add offline publication tests, Makefile commands, CI checks and a release guide. App Store archives remain separate.
+
+### Further correctness fixes — 13 November 2026
+
+- Retain local listening state under canonical identities across server changes; migration v14 quarantines unattributable legacy orphan rows rather than attaching them by row number.
+- Scope session closure to the active session from this installation, preserving imported remote sessions and avoiding downtime credit after relaunch.
+- Confirm remote cloud-zone deletion/recreation before clearing local history; surface failures, preserve local rows and retain retry state across launches.
+- Cancel removed background downloads, deduplicate active/restored transfers and ignore callbacks from superseded attempts.
+- Add regression coverage for server collisions, local identity restoration, session ownership, failed-reset retries and transfer cancellation.
+
+### Audit fixes — 13 November 2026
+
+- Acknowledge the exact revision saved by iCloud so an edit made during a save remains pending.
+- Clear removed optional cloud fields, including finished-book dates and bookmark labels.
+- Preserve the Double type for whole-number playback speeds.
+- Validate the server component of per-server book identities before resolving rating keys.
+- Retain incoming bookmarks, sessions and speed settings until their books are cached; migration v13 adds a durable inbox and clear-data actions clear both inboxes.
+- Reject HTTP download failures and login/error documents instead of marking them downloaded.
+- Reconnect iOS background sessions before a scene appears and complete system handoffs only after download events have been saved.
+- Add cloud/download regression tests, CI, included platform drift checks, build/recovery/CloudKit documentation and GPL-3.0-or-later licensing.
+
+
 ### Listening
 
 - Plays audiobooks from a Plex Media Server on iPhone, iPad, Mac and Apple TV.

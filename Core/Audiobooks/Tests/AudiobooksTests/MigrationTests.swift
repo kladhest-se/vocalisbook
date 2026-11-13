@@ -225,6 +225,24 @@ struct MigrationTests {
         }
         #expect(applied.last == Schema.currentVersion)
     }
+    @Test("v13 adds a deferred-record inbox without rewriting existing listening data")
+    func v13PreservesListeningData() throws {
+        let queue = try v1Database()
+        let migrator = Schema.migrator()
+        try migrator.migrate(queue, upTo: "v12_refetch_tag_metadata")
+        try migrator.migrate(queue)
+        try queue.read { db in
+            let bookmarks = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM bookmark")
+            let progress = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM progress")
+            let sessions = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM listening_session")
+            let inbox = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM cloud_pending_record")
+            #expect(bookmarks == 1)
+            #expect(progress == 1)
+            #expect(sessions == 1)
+            #expect(inbox == 0)
+        }
+    }
+
     // MARK: - v12, the re-fetch
 
     /// v12 is the one migration here that exists to make the app do *more*

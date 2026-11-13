@@ -42,13 +42,13 @@ let package = Package(
         //
         // macOS is the only one of the three platform packages `swift test` can
         // run — `make platforms` builds iOS and tvOS against a generic simulator
-        // destination with nothing booted, which cannot run a test. `drift.sh`
+        // destination with nothing booted, which cannot run a test. `scripts/check-drift.py`
         // asserts the files under test are byte-identical across the copies, so
         // testing here covers all three.
         //
         // A test target whose directory is empty is not a harmless stub: SwiftPM
         // refuses to resolve the package graph at all, breaking every build that
-        // depends on this and not merely the tests. `layout.sh` checks for that.
+        // depends on this and not merely the tests. `make check` checks for that.
         .testTarget(
             name: "PlatformTests",
             dependencies: ["Platform"],

@@ -387,6 +387,11 @@ struct StoreTests {
 
         let books = try library.books(sectionID: "srv:2")
         #expect(books.isEmpty)
+        #expect(try sync.progress(bookRatingKey: "900") == nil)
+        try db.writer.write { conn in
+            try conn.execute(sql: "INSERT INTO library_section (id, server_id, section_key, title) VALUES ('srv:2', 'srv', '2', 'Books')")
+        }
+        try library.cache(book: plexBook(), tracks: plexTracks([600_000]), chapters: [], sectionID: "srv:2")
         let survivingProgress = try sync.progress(bookRatingKey: "900")
         #expect(survivingProgress?.absoluteMs == 42_000)
     }

@@ -13,12 +13,12 @@ import Foundation
 /// live but the device and iCloud. That is also why the Apple TV treats its
 /// database as a cache: on that platform this is the only thing that makes the
 /// data survive.
-public struct CloudRecord: Sendable, Hashable, Identifiable {
+public struct CloudRecord: Sendable, Hashable, Identifiable, Codable {
 
     /// What a record is. The raw value is the CloudKit record type, so renaming
     /// a case orphans every record already in the container — these are wire
     /// values, not names.
-    public enum Kind: String, Sendable, CaseIterable {
+    public enum Kind: String, Sendable, CaseIterable, Codable {
         /// Where somebody is in a book.
         ///
         /// Plex owns this too, and remains the authority: other Plex clients
@@ -35,7 +35,7 @@ public struct CloudRecord: Sendable, Hashable, Identifiable {
 
     public let kind: Kind
     public let id: String
-    /// Bumped by the store on every local edit. The whole conflict rule.
+    /// Bumped on local edits; used for conflict checks and exact acknowledgements.
     public let revision: Int
     /// A tombstone still has to travel: deleting locally and going quiet leaves
     /// the row alive on every other device, which then pushes it back.
@@ -66,7 +66,7 @@ public struct CloudRecord: Sendable, Hashable, Identifiable {
 /// Deliberately small. Everything stored here is a string, a number, a date or a
 /// flag, and an enum with four cases is a thing a platform mapper can switch over
 /// exhaustively — where `Any` is a thing it can get wrong at runtime.
-public enum CloudValue: Sendable, Hashable {
+public enum CloudValue: Sendable, Hashable, Codable {
     case string(String)
     case int(Int)
     case double(Double)
