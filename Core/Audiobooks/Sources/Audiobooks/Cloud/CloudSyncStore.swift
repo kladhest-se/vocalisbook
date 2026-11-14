@@ -29,6 +29,27 @@ public struct CloudSyncStore: Sendable {
         try database.purgeSyncedUserData()
     }
 
+    public func pendingCount() throws -> Int {
+        try database.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT (SELECT COUNT(*) FROM progress WHERE cloud_dirty = 1)
+                    + (SELECT COUNT(*) FROM bookmark WHERE dirty = 1)
+                    + (SELECT COUNT(*) FROM book_settings WHERE dirty = 1)
+                    + (SELECT COUNT(*) FROM listening_session WHERE dirty = 1)
+                """) ?? 0
+        }
+    }
+
+    public func lastSuccessfulSync() throws -> Date? {
+        try database.writer.read { db in
+            try Date.fetchOne(db, sql: "SELECT last_success FROM sync_health WHERE destination = 'icloud'")
+        }
+    }
+
+    private static func recordSuccess(_ db: Database) throws {
+        try db.execute(sql: "INSERT INTO sync_health (destination, last_success) VALUES ('icloud', ?) ON CONFLICT(destination) DO UPDATE SET last_success = excluded.last_success", arguments: [Date()])
+    }
+
     // MARK: - Outgoing
 
     /// Everything edited here and not yet acknowledged.
@@ -144,6 +165,7 @@ public struct CloudSyncStore: Sendable {
         }
 
         try database.writer.write { db in
+            if !records.isEmpty { try Self.recordSuccess(db) }
             for record in records where record.kind == .bookSettings {
                 // Back through `book`, like progress: the record names an
                 // identity and the row is keyed by a rating key. Matching the id
@@ -215,6 +237,8 @@ public struct CloudSyncStore: Sendable {
                 }
                 if accepted { result.applied += 1 } else { result.rejected += 1 }
             }
+
+            if result.applied > 0 { try Self.recordSuccess(db) }
 
             // Swept here rather than on a timer: this is the only place rows are
             // added, so it is the only place the table can grow.

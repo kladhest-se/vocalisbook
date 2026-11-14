@@ -86,6 +86,7 @@ public actor CloudSyncDriver {
         public var fetched = 0
         public var lastError: String?
         public var lastActivity: Date?
+        public var lastSuccessfulSync: Date?
     }
 
     public private(set) var status = Status()
@@ -105,6 +106,7 @@ public actor CloudSyncDriver {
 
     public init(store: CloudSyncStore, containerIdentifier: String) {
         self.store = store
+        self.status.lastSuccessfulSync = try? store.lastSuccessfulSync()
         self.container = CKContainer(identifier: containerIdentifier)
         // Private, always. These are one person's bookmarks and listening
         // history; nothing here is shared with anybody.
@@ -124,6 +126,14 @@ public actor CloudSyncDriver {
     ///
     /// The caller clears the local rows first. This side only forgets what it
     /// knew about the server.
+    /// Stop without erasing local rows or saved change tokens.
+    public func stop() async {
+        let oldEngine = engine
+        engine = nil
+        await oldEngine?.cancelOperations()
+        status.isRunning = false
+    }
+
     public func restartFromScratch() async {
         guard !isResetting else { return }
         let oldEngine = engine
@@ -197,6 +207,7 @@ public actor CloudSyncDriver {
             )
             status.lastError = nil
             status.lastActivity = Date()
+            status.lastSuccessfulSync = try? store.lastSuccessfulSync()
         } catch {
             status.lastError = error.localizedDescription
             throw error
@@ -397,6 +408,7 @@ extension CloudSyncDriver {
             appliedRevision += 1
             status.fetched += result.applied
             status.lastActivity = Date()
+            status.lastSuccessfulSync = try? store.lastSuccessfulSync()
             log.debug("applied \(result.applied), rejected \(result.rejected)")
 
             if result.applied > 0 { onApplied?() }
@@ -428,12 +440,13 @@ extension CloudSyncDriver {
         if !sent.savedRecords.isEmpty {
             status.pushed += sent.savedRecords.count
             status.lastActivity = Date()
+            status.lastSuccessfulSync = try? store.lastSuccessfulSync()
             status.lastError = nil
         }
         // Reported per batch, not once ever. Keyed on `status.pushed == 0` this
         // would have gone quiet after the first success and never mentioned a
         // failure again — which is the same silence the status exists to break.
-        if sent.savedRecords.isEmpty, let failure = sent.failedRecordSaves.first {
+        if let failure = sent.failedRecordSaves.first {
             status.lastError = failure.error.localizedDescription
         }
 
@@ -478,6 +491,7 @@ extension CloudSyncDriver {
 
         do {
             try Self.acknowledgeSavedRecords(sent.savedRecords, in: store)
+            status.lastSuccessfulSync = try? store.lastSuccessfulSync()
             // Includes newer edits made during the save, and the next page of
             // dirty rows when more than one batch is waiting.
             enqueuePending()

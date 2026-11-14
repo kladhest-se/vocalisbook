@@ -78,7 +78,7 @@ struct TimelineTests {
         }
     }
 
-    @Test("Tracks with no duration are skipped and the book reads as incomplete")
+    @Test("Missing duration leaves the book incomplete")
     func incompleteMetadata() throws {
         let json = """
         {"ratingKey":"t0","key":"/k","title":"Part 1",

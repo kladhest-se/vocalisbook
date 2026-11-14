@@ -10,6 +10,7 @@ import PlatformShared
 /// real, not estimated from position.
 struct HistoryView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.theme) private var theme
     @State private var stats: ListeningStats?
     @State private var expandedDay: Date?
@@ -54,6 +55,14 @@ struct HistoryView: View {
 
         .task { reload() }
         .onChange(of: app.historyRevision) { _, _ in reload() }
+        .onChange(of: app.sectionID) { _, _ in
+            expandedDay = nil
+            sessions = []
+            reload()
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { reload() } }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in reload() }
     }
 
     /// The last fortnight, as cards along a row.
@@ -115,7 +124,7 @@ struct HistoryView: View {
                 // push its neighbours sideways, which on a remote means the
                 // thing somebody just selected moves out from under them.
                 if expandedDay != nil {
-                    DaySessions(sessions: sessions)
+                    DaySessions(sessions: sessions, daySeconds: stats.secondsPerDay[expandedDay!] ?? 0)
                 }
             }
         }
@@ -169,7 +178,7 @@ struct WeekCard: View {
     let stats: ListeningStats
     @Environment(\.theme) private var theme
 
-    private var days: [(day: Date, seconds: Int)] { stats.recentDays(7) }
+    private var days: [(day: Date, seconds: Int)] { stats.weekDays() }
     private var peak: Int { max(days.map(\.seconds).max() ?? 0, 1) }
     private var daysWithListening: Int { days.filter { $0.seconds > 0 }.count }
 
@@ -297,11 +306,15 @@ struct DayCard: View {
 /// What was listened to on the selected day.
 struct DaySessions: View {
     let sessions: [SessionSummary]
+    let daySeconds: Int
 
     @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if sessions.reduce(0, { $0 + $1.seconds }) > daySeconds {
+                Text("Overlapping sessions count once in the daily total.").font(.caption).foregroundStyle(.secondary)
+            }
             if sessions.isEmpty {
                 Text("Nothing recorded for that day.")
                     .font(.title3)

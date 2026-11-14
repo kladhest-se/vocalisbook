@@ -11,8 +11,21 @@ enum LocalBookState {
         for row in try Row.fetchAll(db, sql: "SELECT rating_key, identity_key FROM book") {
             let key: String = row["rating_key"]
             let identity: String? = row["identity_key"]
+            try archive(bookKey: key, db: db)
             try move(from: key, to: identity.map { prefix + $0 } ?? "@unresolved:\(key)", db: db)
         }
+    }
+
+    static func archive(bookKey: String, db: Database) throws {
+        guard let book = try BookRecord.fetchOne(db, key: bookKey), let identity = book.identityKey else { return }
+        let payload = try JSONEncoder().encode(book)
+        try db.execute(sql: "INSERT INTO recording_metadata_archive (identity_key, payload) VALUES (?, ?) ON CONFLICT(identity_key) DO UPDATE SET payload = excluded.payload", arguments: [identity, payload])
+    }
+
+    static func detach(bookKey: String, db: Database) throws {
+        try archive(bookKey: bookKey, db: db)
+        let identity = try CloudSyncStore.identity(forBook: bookKey, db: db)
+        try move(from: bookKey, to: identity.map { prefix + $0 } ?? "@unresolved:\(bookKey)", db: db)
     }
 
     static func prepare(bookKey: String, identity: String, sectionID: String, db: Database) throws {
@@ -23,6 +36,7 @@ enum LocalBookState {
         // A same-server fallback gaining a provider GUID is a metadata upgrade.
         if let oldIdentity, oldIdentity != identity,
            !(oldIdentity == fallback && (old?["library_section_id"] as String?) == sectionID) {
+            try archive(bookKey: bookKey, db: db)
             try move(from: bookKey, to: prefix + oldIdentity, db: db)
             try db.execute(sql: "DELETE FROM book WHERE rating_key = ?", arguments: [bookKey])
         }

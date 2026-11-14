@@ -1,0 +1,42 @@
+{
+  "contract_version": 2,
+  "work_identity_vectors": [
+    {
+      "name": "authoritative_openlibrary_work",
+      "moods": [
+        "Isaac Asimov",
+        "Series: Robot",
+        "Work-ID: openlibrary:OL12345W"
+      ],
+      "expected_additional_authors": [
+        "Isaac Asimov"
+      ],
+      "expected_work_identity": "openlibrary:OL12345W",
+      "expected_canonical_work_key": "spokenmeta:work:openlibrary:OL12345W"
+    },
+    {
+      "name": "missing_work_identity_is_unknown",
+      "moods": [
+        "Isaac Asimov",
+        "Series: Robot"
+      ],
+      "expected_additional_authors": [
+        "Isaac Asimov"
+      ],
+      "expected_work_identity": null,
+      "expected_canonical_work_key": null
+    },
+    {
+      "name": "malformed_work_identity_is_reserved_but_ignored",
+      "moods": [
+        "Isaac Asimov",
+        "Work-ID: openlibrary:OL12345M"
+      ],
+      "expected_additional_authors": [
+        "Isaac Asimov"
+      ],
+      "expected_work_identity": null,
+      "expected_canonical_work_key": null
+    }
+  ]
+}

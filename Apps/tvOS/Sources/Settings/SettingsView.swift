@@ -122,6 +122,16 @@ struct SettingsView: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Sync status").font(.headline)
+                        SyncHealthView(status: app.plexQueueStatus, cloudLastSuccess: app.cloudStatus?.lastSuccessfulSync,
+                        cloudPending: app.cloudPendingCount, cloudEnabled: app.iCloudSyncEnabled,
+                        retryCloud: { app.retryCloudUpdates() },
+                            isOffline: false, retry: { app.retryPlexUpdates() })
+                        Text("Export and import listening backups on iPhone, iPad or Mac. iCloud carries restored history to this Apple TV.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+
                     // Storage, above About.
                     //
                     // A button and a sentence rather than a section: this screen

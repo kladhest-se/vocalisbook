@@ -16,7 +16,7 @@ struct ArtworkCacheTests {
 
     @Test("A key is safe to use as a filename")
     func keysAreFilenameSafe() {
-        let key = ArtworkCache.key(thumb: thumb, width: 600, height: 600)
+        let key = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 600, height: 600)
 
         #expect(!key.contains("/"))
         #expect(!key.contains(":"))
@@ -30,7 +30,7 @@ struct ArtworkCacheTests {
         // The token lives in the URL, not the thumb — so a key derived from the
         // thumb cannot contain one. Asserted rather than assumed, because the
         // tempting refactor is to pass the URL in and derive everything from it.
-        let key = ArtworkCache.key(thumb: thumb, width: 600, height: 600)
+        let key = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 600, height: 600)
 
         #expect(!key.lowercased().contains("token"))
         #expect(!key.contains("xplex"))
@@ -38,16 +38,16 @@ struct ArtworkCacheTests {
 
     @Test("Sizes are part of the identity")
     func sizeDistinguishes() {
-        let small = ArtworkCache.key(thumb: thumb, width: 200, height: 200)
-        let large = ArtworkCache.key(thumb: thumb, width: 600, height: 600)
+        let small = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 200, height: 200)
+        let large = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 600, height: 600)
 
         #expect(small != large)
     }
 
     @Test("Different covers get different keys")
     func thumbsDistinguish() {
-        let one = ArtworkCache.key(thumb: "/library/metadata/900/thumb/1", width: 600, height: 600)
-        let two = ArtworkCache.key(thumb: "/library/metadata/901/thumb/1", width: 600, height: 600)
+        let one = ArtworkCache.key(serverIdentifier: "test-server", thumb: "/library/metadata/900/thumb/1", width: 600, height: 600)
+        let two = ArtworkCache.key(serverIdentifier: "test-server", thumb: "/library/metadata/901/thumb/1", width: 600, height: 600)
 
         #expect(one != two)
     }
@@ -55,8 +55,8 @@ struct ArtworkCacheTests {
     /// A cache that misses on every launch grows forever and never helps.
     @Test("A key is stable across calls")
     func keysAreStable() {
-        let first = ArtworkCache.key(thumb: thumb, width: 600, height: 600)
-        let second = ArtworkCache.key(thumb: thumb, width: 600, height: 600)
+        let first = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 600, height: 600)
+        let second = ArtworkCache.key(serverIdentifier: "test-server", thumb: thumb, width: 600, height: 600)
 
         #expect(first == second)
     }
@@ -67,11 +67,11 @@ struct ArtworkCacheTests {
     @Test("A very long thumb still produces a usable filename")
     func longThumbsAreShortened() {
         let long = "/library/metadata/" + String(repeating: "a", count: 500) + "/thumb/1"
-        let key = ArtworkCache.key(thumb: long, width: 600, height: 600)
+        let key = ArtworkCache.key(serverIdentifier: "test-server", thumb: long, width: 600, height: 600)
 
         #expect(key.count < 128)
         // Still distinct from another long one sharing its tail.
         let other = "/library/metadata/" + String(repeating: "b", count: 500) + "/thumb/1"
-        #expect(key != ArtworkCache.key(thumb: other, width: 600, height: 600))
+        #expect(key != ArtworkCache.key(serverIdentifier: "test-server", thumb: other, width: 600, height: 600))
     }
 }

@@ -4,6 +4,48 @@
 
 The first release. Everything below is new.
 
+### VocalisMeta contract v4 — 14 November 2026
+
+- Validate bounded v4 metadata packets and retain v1/v2/v3 compatibility, including safe fallback for damaged or disabled packets.
+- Show field sources, availability, date meaning, explicit series primacy and provider relationship IDs; flag native Plex values that differ from the agent snapshot.
+- Refresh cover caches when artwork changes at the same URL, independently of descriptive metadata changes.
+- Offer explicit review and selective copying of saved positions/completion, bookmarks and listening history for agent-declared recording upgrades. Keep originals and a recovery snapshot; reject stale reviews.
+- Add non-destructive migration v19 and the agent's published v4 fixtures. See [the v4 integration and rollout guide](Docs/vocalismeta-v4.md).
+
+### Reliability, backups and VocalisMeta integration — 14 November 2026
+
+- Serialize Plex uploads across app events, retain cancellation ordering and reject stale server clients.
+- Reconcile deleted metadata after completed full scans while retaining downloaded copies and identity-owned listening state.
+- Scope disk and decoded artwork caches to their server and original thumbnail path.
+- Record actual playback intervals, recover confirmed checkpoints after crashes, and count overlapping sessions once.
+- Add reviewed export/merge-import listening backups on iPhone/iPad and Mac, plus pending-update status and explicit Plex/iCloud retries.
+- Display recording release dates, publishers and rating scores from VocalisMeta; preserve primary series order and library-scoped standing.
+- Persist metadata refresh work beyond the fifty-book cap and clear removed namespaces only after authoritative detail responses.
+- Add migrations v17/v18, published agent-contract fixtures and regression coverage. See [reliability and backup guide](Docs/followup-improvements.md) and [VocalisMeta integration](Docs/vocalismeta-integration.md).
+
+### Accurate daily statistics — 13 November 2026
+
+- Split closed listening sessions across local calendar days, including daylight-saving transitions, and show each day's portion in session details.
+- Align the “This week” chart and per-day average with the calendar-week total and the user's first weekday.
+- Sum short sessions before rounding daily seconds; exclude invalid/future time and make tied best-day results deterministic.
+- Refresh history and Home statistics after day/time-zone changes, returning to the app and local history updates.
+- Preserve saved session records; see [daily statistics](Docs/daily-statistics.md) for calculation rules and regression coverage.
+
+### Plex queue fixes — 13 November 2026
+
+- Match Plex responses to the exact queued update so playback changes made during a request remain pending; late failures cannot delay newer edits.
+- Start exponential retry delays from the latest failed attempt, including events recorded during long offline sessions.
+- Migration v16 preserves pending updates and their event timestamps while adding a separate retry timestamp; see [Plex queue behavior and upgrade](Docs/plex-queue.md).
+- Add regression tests for in-flight playback, completion/reset changes, repeated failures and queue upgrades.
+
+### Additional reliability fixes — 13 November 2026
+
+- Enabling iCloud resumes and merges local edits instead of clearing listening records; unavailable/cancelled startup attempts clear the crash marker.
+- Scope audio cache keys to the Plex server to prevent cross-server file collisions.
+- Treat any missing track metadata as an incomplete book; preserve existing valid cached timelines and show retry guidance.
+- Migration v15 preserves legacy audio files and metadata while marking unscoped downloads and timelines as unverified; automatic cleanup retains them for explicit user review.
+- Add regression tests for offline-only data retention, server-isolated audio, incomplete middle tracks and non-destructive upgrades.
+
 ### Repository release tooling — 13 November 2026
 
 - Integrate the ZIFburn/BitSkim release workflow for source pushes, annotated tags and resumable GitLab/GitHub releases.

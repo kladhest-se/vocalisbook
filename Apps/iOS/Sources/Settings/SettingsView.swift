@@ -207,7 +207,16 @@ struct SettingsView: View {
                 // The descriptions still distinguish them, because they are
                 // genuinely different: one throws away the original, the other
                 // throws away a copy that comes back.
+                Section("Sync status") {
+                    SyncHealthView(status: app.plexQueueStatus, cloudLastSuccess: app.cloudStatus?.lastSuccessfulSync,
+                        cloudPending: app.cloudPendingCount, cloudEnabled: app.iCloudSyncEnabled,
+                        retryCloud: { app.retryCloudUpdates() },
+                        isOffline: app.isOffline, retry: { app.retryPlexUpdates() })
+                }
+
                 Section("Data") {
+                    ListeningBackupControls(export: { try app.exportListeningBackup() },
+                        restore: { try app.importListeningBackup($0) })
                     Button("Clear listening history", role: .destructive) {
                         confirmingClear = true
                     }

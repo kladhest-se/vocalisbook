@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "algorithm": "FNV-1a-64 over Unicode scalar values; no UTF-8 byte hashing",
+  "raw_vectors": [
+    {
+      "text": "Ray Porter",
+      "expected": "a10aa11b458db6e9"
+    },
+    {
+      "text": "Ren\u00e9",
+      "expected": "7439f72bbe8fbdc9"
+    },
+    {
+      "text": "Rene\u0301",
+      "expected": "0cb58f54ccf5a544"
+    },
+    {
+      "text": "\u00c5sa \u00d6berg",
+      "expected": "d1f954f0c1bf9dc8"
+    },
+    {
+      "text": "Reader \ud83d\ude00",
+      "expected": "b916153b239e4686"
+    },
+    {
+      "text": "\u8aad\u8005 \ud83d\udcda",
+      "expected": "49ab5e4d2c535aed"
+    },
+    {
+      "text": "A\ud83d\ude00B",
+      "expected": "bdee991e8642cdf2"
+    },
+    {
+      "text": "",
+      "expected": "cbf29ce484222325"
+    }
+  ],
+  "contributor_vectors": [
+    {
+      "name": "Ray Porter",
+      "normalized": "ray porter",
+      "expected": "9303478f4aa8e7a9"
+    },
+    {
+      "name": " Ren\u00e9 ",
+      "normalized": "ren\u00e9",
+      "expected": "4d12f61fc00425e9"
+    },
+    {
+      "name": "Rene\u0301",
+      "normalized": "rene\u0301",
+      "expected": "f9d6e7f345c293a4"
+    },
+    {
+      "name": "\u00c5SA\t\u00d6berg",
+      "normalized": "\u00e5sa \u00f6berg",
+      "expected": "8ffdd6501f884148"
+    },
+    {
+      "name": "Reader \ud83d\ude00",
+      "normalized": "reader \ud83d\ude00",
+      "expected": "4baf9dd530e1ace6"
+    },
+    {
+      "name": "\u8aad\u8005 \ud83d\udcda",
+      "normalized": "\u8aad\u8005 \ud83d\udcda",
+      "expected": "49ab5e4d2c535aed"
+    }
+  ],
+  "local_vectors": [
+    {
+      "title": "Caf\u00e9",
+      "author": "\u00c5sa \u00d6berg",
+      "duration": 120,
+      "language": "sv",
+      "expected": "local:5e0196d28d0850fe"
+    },
+    {
+      "title": "Cafe\u0301",
+      "author": "A\u030asa O\u0308berg",
+      "duration": 120,
+      "language": "sv",
+      "expected": "local:5e0196d28d0850fe"
+    },
+    {
+      "title": "Book \ud83d\ude00",
+      "author": "Reader",
+      "duration": 120,
+      "language": "en",
+      "expected": "local:eed96051efbf642f"
+    }
+  ]
+}

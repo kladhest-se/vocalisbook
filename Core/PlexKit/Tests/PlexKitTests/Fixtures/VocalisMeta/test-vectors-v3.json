@@ -1,0 +1,127 @@
+{
+  "contract_version": 3,
+  "extended_metadata_vectors": [
+    {
+      "name": "audible_recording_with_openlibrary_work_metadata",
+      "moods": [
+        "Andy Weir",
+        "Language: English",
+        "Edition: Unabridged",
+        "Contributor-ID: author:audible:B00G0WYW92 = Andy Weir",
+        "Contributor-ID: author:openlibrary:OL2162289A = Andy Weir",
+        "Contributor-ID: narrator:name:9303478f4aa8e7a9 = Ray Porter",
+        "Work-Published: 1950",
+        "Production: Full cast",
+        "Rating-Source: Audible",
+        "Rating-Count: 48217"
+      ],
+      "expected": {
+        "additional_authors": [
+          "Andy Weir"
+        ],
+        "contributors": [
+          {
+            "role": "author",
+            "source": "audible",
+            "id": "B00G0WYW92",
+            "name": "Andy Weir",
+            "key": "spokenmeta:contributor:author:audible:B00G0WYW92"
+          },
+          {
+            "role": "author",
+            "source": "openlibrary",
+            "id": "OL2162289A",
+            "name": "Andy Weir",
+            "key": "spokenmeta:contributor:author:openlibrary:OL2162289A"
+          },
+          {
+            "role": "narrator",
+            "source": "name",
+            "id": "9303478f4aa8e7a9",
+            "name": "Ray Porter",
+            "key": "spokenmeta:contributor:narrator:name:9303478f4aa8e7a9"
+          }
+        ],
+        "work_published": 1950,
+        "production": "Full cast",
+        "rating_source": "Audible",
+        "rating_count": 48217
+      }
+    },
+    {
+      "name": "librivox_author_and_reader",
+      "moods": [
+        "Andy Weir",
+        "Contributor-ID: author:librivox:10 = Andy Weir",
+        "Contributor-ID: narrator:librivox:20 = Ray Example",
+        "Production: Community recording"
+      ],
+      "expected": {
+        "additional_authors": [
+          "Andy Weir"
+        ],
+        "contributors": [
+          {
+            "role": "author",
+            "source": "librivox",
+            "id": "10",
+            "name": "Andy Weir",
+            "key": "spokenmeta:contributor:author:librivox:10"
+          },
+          {
+            "role": "narrator",
+            "source": "librivox",
+            "id": "20",
+            "name": "Ray Example",
+            "key": "spokenmeta:contributor:narrator:librivox:20"
+          }
+        ],
+        "work_published": null,
+        "production": "Community recording",
+        "rating_source": null,
+        "rating_count": null
+      }
+    },
+    {
+      "name": "ljudboksarkivet_rating_provenance",
+      "moods": [
+        "Selma Lagerlöf",
+        "Language: Swedish",
+        "Rating-Source: Ljudboksarkivet",
+        "Rating-Count: 418"
+      ],
+      "expected": {
+        "additional_authors": [
+          "Selma Lagerlöf"
+        ],
+        "contributors": [],
+        "work_published": null,
+        "production": null,
+        "rating_source": "Ljudboksarkivet",
+        "rating_count": 418
+      }
+    },
+    {
+      "name": "malformed_reserved_values_are_ignored_not_authors",
+      "moods": [
+        "Andy Weir",
+        "Contributor-ID: translator:audible:B00G0WYW92 = Someone",
+        "Contributor-ID: author:openlibrary:OL123W = Someone",
+        "Work-Published: unknown",
+        "Production: Probably full cast",
+        "Rating-Source: Unknown",
+        "Rating-Count: many"
+      ],
+      "expected": {
+        "additional_authors": [
+          "Andy Weir"
+        ],
+        "contributors": [],
+        "work_published": null,
+        "production": null,
+        "rating_source": null,
+        "rating_count": null
+      }
+    }
+  ]
+}

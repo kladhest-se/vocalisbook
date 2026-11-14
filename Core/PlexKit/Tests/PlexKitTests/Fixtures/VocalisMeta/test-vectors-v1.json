@@ -1,0 +1,152 @@
+{
+  "contract_version": 1,
+  "identity_vectors": [
+    {
+      "name": "audible_us_full_guid",
+      "input": "com.plexapp.agents.spokenmeta://B08G9PRS1K_us?lang=en",
+      "expected_parsed": {
+        "provider": "audible",
+        "id": "B08G9PRS1K",
+        "region": "us",
+        "scope": "book"
+      },
+      "expected_canonical_key": "spokenmeta:audible:us:B08G9PRS1K"
+    },
+    {
+      "name": "audible_region_and_case_normalization",
+      "input": "com.plexapp.agents.spokenmeta://b08g9prs1k_UK?lang=en",
+      "expected_parsed": {
+        "provider": "audible",
+        "id": "B08G9PRS1K",
+        "region": "uk",
+        "scope": "book"
+      },
+      "expected_canonical_key": "spokenmeta:audible:uk:B08G9PRS1K"
+    },
+    {
+      "name": "librivox_url_encoded",
+      "input": "com.plexapp.agents.spokenmeta://librivox%3A52?lang=en",
+      "expected_parsed": {
+        "provider": "librivox",
+        "id": "52",
+        "scope": "book"
+      },
+      "expected_canonical_key": "spokenmeta:librivox:52"
+    },
+    {
+      "name": "isbn_with_model_suffix",
+      "input": "com.plexapp.agents.spokenmeta://isbn:9780593135204/-1?lang=en",
+      "expected_parsed": {
+        "provider": "isbn",
+        "id": "9780593135204",
+        "scope": "book"
+      },
+      "expected_canonical_key": "spokenmeta:isbn:9780593135204"
+    },
+    {
+      "name": "local_fingerprint_case_normalization",
+      "input": "com.plexapp.agents.spokenmeta://local:0123456789ABCDEF?lang=en",
+      "expected_parsed": {
+        "provider": "local",
+        "id": "0123456789abcdef",
+        "scope": "book"
+      },
+      "expected_canonical_key": "spokenmeta:local:0123456789abcdef"
+    },
+    {
+      "name": "name_backed_artist_is_not_a_book",
+      "input": "com.plexapp.agents.spokenmeta://name:Kevin+J.+Anderson_us?lang=en",
+      "expected_parsed": {
+        "provider": "name",
+        "id": "Kevin J. Anderson",
+        "scope": "artist"
+      },
+      "expected_canonical_key": null
+    },
+    {
+      "name": "local_plex_guid_has_no_cross_server_identity",
+      "input": "local://122344",
+      "expected_parsed": null,
+      "expected_canonical_key": null
+    },
+    {
+      "name": "different_provider_must_not_be_parsed",
+      "input": "com.example.metadata://B08G9PRS1K_us?lang=en",
+      "expected_parsed": null,
+      "expected_canonical_key": null
+    },
+    {
+      "name": "invalid_isbn_checksum_must_not_be_parsed",
+      "input": "com.plexapp.agents.spokenmeta://isbn:9780593135205?lang=en",
+      "expected_parsed": null,
+      "expected_canonical_key": null
+    }
+  ],
+  "relationship_vectors": [
+    {
+      "name": "multiple_authors_series_and_recording_facets",
+      "moods": [
+        "Terry Pratchett",
+        "Neil Gaiman",
+        "Series: Discworld",
+        "Sequence: Discworld #3.5",
+        "Series: City Watch",
+        "Sequence: City Watch #1",
+        "Language: English",
+        "Edition: Unabridged"
+      ],
+      "styles": [
+        "Stephen Briggs",
+        "Celia Imrie"
+      ],
+      "expected": {
+        "additional_authors": [
+          "Terry Pratchett",
+          "Neil Gaiman"
+        ],
+        "series": [
+          {
+            "name": "Discworld",
+            "position": "3.5"
+          },
+          {
+            "name": "City Watch",
+            "position": "1"
+          }
+        ],
+        "languages": [
+          "English"
+        ],
+        "editions": [
+          "Unabridged"
+        ],
+        "narrators": [
+          "Stephen Briggs",
+          "Celia Imrie"
+        ]
+      }
+    },
+    {
+      "name": "missing_facet_is_unknown_not_false",
+      "moods": [
+        "Isaac Asimov",
+        "Series: Robot"
+      ],
+      "styles": [],
+      "expected": {
+        "additional_authors": [
+          "Isaac Asimov"
+        ],
+        "series": [
+          {
+            "name": "Robot",
+            "position": null
+          }
+        ],
+        "languages": [],
+        "editions": [],
+        "narrators": []
+      }
+    }
+  ]
+}

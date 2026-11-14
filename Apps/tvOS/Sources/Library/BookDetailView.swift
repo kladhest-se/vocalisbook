@@ -1,5 +1,6 @@
 import SwiftUI
 import Audiobooks
+import PlexKit
 import Platform
 import PlatformShared
 
@@ -56,6 +57,18 @@ struct BookDetailView: View {
                     // Production and rating, from the same v2/v3 Mood
                     // namespaces as edition and language — absent just as
                     // often, and shown the same way when it is not.
+                    NavigationLink("Metadata sources and recording upgrades") {
+                        VocalisMetadataView(database: app.database, ratingKey: ratingKey,
+                            canReload: app.server != nil && !(false),
+                            reload: {
+                                guard let sync = app.librarySync else { throw PlexError.transport("Not connected to Plex.") }
+                                _ = try await sync.refreshBook(ratingKey: ratingKey)
+                                app.libraryChanged()
+                            }, pause: { app.player.pause() }, changed: { app.recordingUpgradeApplied() })
+                    }
+                    if let recording = model.credits.recordingLine {
+                        Text(recording).font(.footnote).foregroundStyle(.secondary)
+                    }
                     if let production = model.credits.productionLine {
                         Text(production)
                             .font(.callout)
@@ -86,7 +99,7 @@ struct BookDetailView: View {
                         )
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.isLoading)
+                    .disabled(model.isLoading || model.timeline == nil)
 
                     // Finishing and starting again, which playback alone cannot
                     // do: a book abandoned halfway stays in Continue listening
@@ -292,6 +305,20 @@ struct BookDetailView: View {
             }
             .padding(.vertical, 40)
         }
+        .overlay(alignment: .bottom) {
+            if let message = model.metadataFailure {
+                VStack(spacing: 8) {
+                    Text(message)
+                    Button("Retry loading book") {
+                        Task { await model.load(app: app, ratingKey: ratingKey) }
+                    }
+                    .disabled(model.isLoading)
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+        }
         .task {
             await model.load(app: app, ratingKey: ratingKey)
             model.reloadBookmarks(app: app, ratingKey: ratingKey)
@@ -416,6 +443,8 @@ struct ContributorRoute: Hashable {
 @MainActor
 @Observable
 final class BookDetailModel {
+    private(set) var metadataFailure: String?
+
     private(set) var book: BookRecord?
     private(set) var timeline: CachedTimeline?
 
@@ -584,6 +613,7 @@ final class BookDetailModel {
     }
 
     func load(app: AppModel, ratingKey: String) async {
+        metadataFailure = nil
         isLoading = true
         defer { isLoading = false }
 
@@ -605,8 +635,12 @@ final class BookDetailModel {
                 book = try? app.library.book(ratingKey: ratingKey)
                 app.clearDegraded()
             } catch {
+                if error is SyncError { metadataFailure = error.localizedDescription }
                 app.handle(error)
             }
+        }
+        if timeline == nil && metadataFailure == nil {
+            metadataFailure = "This book needs complete audio metadata from Plex before it can play. Connect to your server and try again."
         }
         chapters = timeline?.chapters ?? []
         next = try? app.library.nextInSeries(after: ratingKey)

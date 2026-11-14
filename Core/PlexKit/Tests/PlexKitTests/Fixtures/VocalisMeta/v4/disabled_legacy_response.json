@@ -1,0 +1,65 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "album",
+        "ratingKey": "101",
+        "parentRatingKey": "100",
+        "parentTitle": "Fixture Author",
+        "title": "Caf\u00e9 at Dawn",
+        "titleSort": "Saga 003.5 Cafe at Dawn",
+        "summary": "Synthetic audiobook fixture.",
+        "guid": "com.plexapp.agents.spokenmeta://B000000001_us?lang=en",
+        "originallyAvailableAt": "2020-01-01",
+        "updatedAt": 1800000000,
+        "thumb": "/library/metadata/101/thumb/1800000000",
+        "Mood": [
+          {
+            "tag": "Fixture Author"
+          },
+          {
+            "tag": "Series: Saga"
+          },
+          {
+            "tag": "Sequence: Saga #3.5"
+          },
+          {
+            "tag": "Series: The Saga Sequence"
+          },
+          {
+            "tag": "Sequence: The Saga Sequence #1"
+          },
+          {
+            "tag": "Language: English"
+          },
+          {
+            "tag": "Edition: Unabridged"
+          },
+          {
+            "tag": "Work-ID: openlibrary:OL123W"
+          },
+          {
+            "tag": "Work-Published: 1900"
+          },
+          {
+            "tag": "Contributor-ID: author:audible:B000000002 = Fixture Author"
+          },
+          {
+            "tag": "Contributor-ID: narrator:name:9303478f4aa8e7a9 = Ray Porter"
+          }
+        ],
+        "Style": [
+          {
+            "tag": "Fixture Reader"
+          }
+        ],
+        "Genre": [
+          {
+            "tag": "Fiction"
+          }
+        ]
+      }
+    ]
+  }
+}

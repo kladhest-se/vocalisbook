@@ -27,7 +27,7 @@ struct DownloadsView: View {
 
     var body: some View {
         ScrollView {
-            if !entries.isEmpty {
+            if !entries.isEmpty || totalBytes > 0 {
                 header
             }
 
@@ -59,10 +59,12 @@ struct DownloadsView: View {
 
             if entries.isEmpty {
                 ContentUnavailableView(
-                    "Nothing downloaded",
+                    totalBytes > 0 ? "Older downloads retained" : "Nothing downloaded",
                     systemImage: "arrow.down.circle",
                     description: Text(
-                        "Books you download are kept here and play without a connection."
+                        totalBytes > 0
+                            ? "Some saved files need verification. Remove all deletes these files while keeping your listening history."
+                            : "Books you download are kept here and play without a connection."
                     )
                 )
                 .padding(.top, 60)
@@ -189,9 +191,8 @@ struct DownloadsView: View {
         // "remove all" is asking about the outcome of the whole thing, not about
         // whichever file failed last.
         app.save(while: "remove those downloads") {
-            for entry in entries {
-                try app.downloads.evict(bookRatingKey: entry.book.ratingKey)
-            }
+            // Include retained legacy files whose books are no longer cached.
+            try app.downloads.evictAll()
         }
         app.refreshDownloadedKeys()
         refresh()

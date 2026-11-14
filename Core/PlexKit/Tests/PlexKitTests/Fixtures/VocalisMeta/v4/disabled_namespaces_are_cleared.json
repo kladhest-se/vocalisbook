@@ -1,0 +1,62 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "album",
+        "ratingKey": "101",
+        "parentRatingKey": "100",
+        "parentTitle": "Fixture Author",
+        "title": "Caf\u00e9 at Dawn",
+        "titleSort": "Saga 003.5 Cafe at Dawn",
+        "summary": "Synthetic audiobook fixture.",
+        "guid": "com.plexapp.agents.spokenmeta://B000000001_us?lang=en",
+        "originallyAvailableAt": "2020-01-01",
+        "updatedAt": 1800000000,
+        "thumb": "/library/metadata/101/thumb/1800000000",
+        "Mood": [
+          {
+            "tag": "Fixture Author"
+          },
+          {
+            "tag": "Series: Saga"
+          },
+          {
+            "tag": "Sequence: Saga #3.5"
+          },
+          {
+            "tag": "Series: The Saga Sequence"
+          },
+          {
+            "tag": "Sequence: The Saga Sequence #1"
+          },
+          {
+            "tag": "Language: English"
+          },
+          {
+            "tag": "Edition: Unabridged"
+          },
+          {
+            "tag": "VocalisMeta-v4: cb240a9d1480de6e61fdb87dbc8e017ed6afb85276f0e0a97312ce5a9b2970fc:1/3:eNrNVtuO2jAQ_RXkZ1rZTuLEvPWy_YDd9qlF0diegEVwqOOwu0L8e-0ssOwD2m3VoiKEMtgzc87cMjuiWwSPpnawxn4DGnsy-07uO7-qrUEXbHgkU4IPAZ2J19YYwEAAMp8S3bngQYd6i763nSOzfEoai62JNnYEfEhm0uPGd1t04DQmCbfJcnoeD6Lg6zUEvYyO-m7w44nHdRewPl4g-3gWoI1HDbQ9jlJIF1euu3dRcwvtkOR-CbwQszxjGo2QTAAHzoAVArOqpAwaLAqlTNlUlRSyUarRhYgiUilNXjZcFLmgySEMYdn5kcwxFvUZ-MEdfV_khw-b1mobDrGMwfHnJGEwVkVObyX3nXyxD2HwOPkwQiPz_SENVg3hAPUi"
+          },
+          {
+            "tag": "VocalisMeta-v4: cb240a9d1480de6e61fdb87dbc8e017ed6afb85276f0e0a97312ce5a9b2970fc:2/3:mGe8JwDHv6IZj9CnHJJTJdTG9hDhGXIJ3qF4zgAmQGhsGMthd7XAkG8OlLdmEcFEnRbcYoAFXhXCjVu0tl8mBQfeQ_hPS-cWITXUfMy57ryxblGbUemK0eKU03eUxe-og95if00AO7LGtYqDa2k3aeTtnmeRNU9pi0ofKaV3N7eU8uRLd5sxef0Fxx6bcXK1kOo_WZ6xChVTosqkyktRCsXiD2aNKaTMmFGqkFQylXNZVBpYwyUi5LnMOGaFFjJ5wp_DIQYsirGUEjvydYmTO1jA5O54vp--QoL9IYlKZIxzriIonnFAFLIymSlypHGWcqEqBC2EQaGNZHmpESgyZqpGVhoL9ZJE9r44o5EokP08NYJdg3-s_4X__f7k8Iol"
+          },
+          {
+            "tag": "VocalisMeta-v4: cb240a9d1480de6e61fdb87dbc8e017ed6afb85276f0e0a97312ce5a9b2970fc:3/3:_gmaHwOlKCcQJp_hacy--kq8wpR2Q9seoNSbQUXS8OrAvhasaOw0MIfNwsdZldozFsjTivCWlMUlZdmZ38ro8yRc4WPaIjbdCl3admaHW7Ohn6VOGj-pk3zEkdael8vOX9s_RhpPu9bJKOVKaKV0gyWAooIVpYpdUOamLKLxLB1lKsspN5yWla5yDZUylcCqKEvJYyP8AhjKVrY"
+          }
+        ],
+        "Style": [
+          {
+            "tag": "Fixture Reader"
+          }
+        ],
+        "Genre": [
+          {
+            "tag": "Fiction"
+          }
+        ]
+      }
+    ]
+  }
+}

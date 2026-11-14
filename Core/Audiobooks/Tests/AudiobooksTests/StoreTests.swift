@@ -178,7 +178,8 @@ struct StoreTests {
         let db = try makeDatabase()
         let sync = SyncStore(database: db)
         try sync.recordPosition(bookRatingKey: "900", absoluteMs: 42_000)
-        try sync.markSynced(bookRatingKey: "900", kind: .position, absoluteMs: 42_000)
+        let sent = try #require(try sync.pendingOutbox().first)
+        try sync.markSynced(entry: sent)
 
         let stored = try sync.progress(bookRatingKey: "900")
         let progress = try #require(stored)
@@ -193,14 +194,20 @@ struct StoreTests {
         let db = try makeDatabase()
         let sync = SyncStore(database: db)
         try sync.recordPosition(bookRatingKey: "900", absoluteMs: 42_000)
+        let sent = try #require(try sync.pendingOutbox().first)
         // Playback continued while the request was on the wire.
         try sync.recordPosition(bookRatingKey: "900", absoluteMs: 55_000)
-        try sync.markSynced(bookRatingKey: "900", kind: .position, absoluteMs: 42_000)
+        try sync.markSynced(entry: sent)
 
         let stored = try sync.progress(bookRatingKey: "900")
         let progress = try #require(stored)
         #expect(progress.absoluteMs == 55_000)
         #expect(progress.dirty, "the newer position must still be queued")
+        #expect(progress.syncedAt == nil)
+        #expect(progress.syncedOffsetMs == nil)
+        let pending = try sync.pendingOutbox()
+        #expect(pending.count == 1)
+        #expect(pending.first?.absoluteMs == 55_000)
     }
 
     @Test("Failed entries back off instead of retrying immediately")

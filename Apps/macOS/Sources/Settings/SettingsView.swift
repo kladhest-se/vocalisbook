@@ -148,7 +148,16 @@ struct SettingsView: View {
                 // Both in one section, and named as a pair. Two headings for
                 // one question — what do you want thrown away — where the labels
                 // are what tell them apart, not the headings.
+                Section("Sync status") {
+                    SyncHealthView(status: app.plexQueueStatus, cloudLastSuccess: app.cloudStatus?.lastSuccessfulSync,
+                        cloudPending: app.cloudPendingCount, cloudEnabled: app.iCloudSyncEnabled,
+                        retryCloud: { app.retryCloudUpdates() },
+                        isOffline: app.isOffline, retry: { app.retryPlexUpdates() })
+                }
+
                 Section("Data") {
+                    ListeningBackupControls(export: { try app.exportListeningBackup() },
+                        restore: { try app.importListeningBackup($0) })
                     Button("Clear Listening History…") { confirmingClear = true }
                     Text(app.iCloudSyncEnabled
                          ? "Your listening history on this Mac and in iCloud: what you "

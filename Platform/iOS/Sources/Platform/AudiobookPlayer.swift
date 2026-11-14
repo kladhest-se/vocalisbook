@@ -81,6 +81,19 @@ public final class AudiobookPlayer {
     /// files were stored under an extension AVFoundation could not read.
     public private(set) var failure: String?
 
+    public var onListeningCheckpoint: ((Int) -> Void)?
+    private var listeningGate = ListeningPlaybackGate()
+
+    private func updateListening(_ isPlaying: Bool) {
+        switch listeningGate.update(isPlaying: isPlaying) {
+        case .started:
+            if let key = bookRatingKey { onStarted?(key, absoluteMs) }
+        case .ended:
+            onPaused?()
+        case .unchanged: break
+        }
+    }
+
     private let player = AVQueuePlayer()
     private var statusObservation: NSKeyValueObservation?
 
@@ -150,6 +163,10 @@ public final class AudiobookPlayer {
     ) {
         guard timeline.isComplete else { return }
 
+        updateListening(false)
+        player.pause()
+        state = .paused
+        pausedAt = nil
         self.timeline = timeline
         self.bookRatingKey = timeline.bookRatingKey
         self.rate = rate
@@ -214,6 +231,7 @@ public final class AudiobookPlayer {
     public var canStartPlayback: (@MainActor () -> Bool)?
 
     public func play() {
+        guard !isActive else { return }
         // Before anything, including activating the audio session: a refusal
         // that had already taken the session would leave this app holding it
         // with nothing playing.
@@ -234,13 +252,10 @@ public final class AudiobookPlayer {
         }
 
         applySmartRewind()
+        state = .buffering
         player.play()
-        applyRate()
-        state = .playing
+        player.rate = rate
         pausedAt = nil
-        if let key = bookRatingKey {
-            onStarted?(key, absoluteMs)
-        }
         onPlaybackStateChanged?()
     }
 
@@ -262,6 +277,7 @@ public final class AudiobookPlayer {
         // moving the position — but only if it is already idle when the queue
         // comes apart. Setting it afterwards leaves exactly the window this is
         // meant to close.
+        updateListening(false)
         state = .idle
 
         player.pause()
@@ -311,12 +327,12 @@ public final class AudiobookPlayer {
         state = .paused
         pausedAt = Date()
         persistPosition(force: true)
-        onPaused?()
+        updateListening(false)
         onPlaybackStateChanged?()
     }
 
     public func togglePlayPause() {
-        state == .playing ? pause() : play()
+        isActive ? pause() : play()
     }
 
     public func seek(toAbsoluteMs target: Int) {
@@ -514,16 +530,20 @@ public final class AudiobookPlayer {
             forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            let endedID = (note.object as? AVPlayerItem).map { ObjectIdentifier($0) }
             MainActor.assumeIsolated {
-                guard let self, let timeline = self.timeline else { return }
+                guard let self, let timeline = self.timeline, let endedID,
+                      let endedItem = self.queuedItems.first(where: { ObjectIdentifier($0) == endedID }) else { return }
                 // Resync immediately rather than waiting up to half a second
                 // for the next tick, so a chapter boundary does not show the
                 // previous chapter's title for a beat.
                 self.syncCurrentSegment()
 
-                if self.player.items().count <= 1, let key = self.bookRatingKey {
+                if endedItem === self.queuedItems.last, let key = self.bookRatingKey {
                     self.absoluteMs = timeline.totalDurationMs
+                    self.persistPosition(force: true)
+                    self.updateListening(false)
                     self.onFinished?(key)
                     self.state = .paused
                 }
@@ -536,15 +556,21 @@ public final class AudiobookPlayer {
     /// Cleared on the next successful play rather than on a timer: a message
     /// that disappears on its own is one somebody was reading.
     private func report(failure message: String) {
+        player.pause()
+        persistPosition(force: true)
+        updateListening(false)
         self.failure = message
         state = .paused
         onPlaybackStateChanged?()
     }
 
     private func apply(timeControlStatus status: AVPlayer.TimeControlStatus) {
+        guard status == player.timeControlStatus else { return }
+        updateListening(status == .playing)
         switch status {
         case .playing:
             state = .playing
+            applyRate()
         case .waitingToPlayAtSpecifiedRate:
             state = .buffering
         case .paused:
@@ -631,6 +657,7 @@ public final class AudiobookPlayer {
         ) else { return }
 
         absoluteMs = absolute
+        if listeningGate.checkpointDue() { onListeningCheckpoint?(absoluteMs) }
         updateChapter()
         persistPosition(force: false)
     }

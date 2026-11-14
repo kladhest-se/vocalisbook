@@ -10,6 +10,7 @@ import PlatformShared
 /// real, not estimated from position.
 struct HistoryView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.theme) private var theme
     @State private var stats: ListeningStats?
     @State private var expandedDay: Date?
@@ -34,6 +35,14 @@ struct HistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { reload() }
         .onChange(of: app.historyRevision) { _, _ in reload() }
+        .onChange(of: app.sectionID) { _, _ in
+            expandedDay = nil
+            sessions = []
+            reload()
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { reload() } }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in reload() }
     }
 
     @ViewBuilder
@@ -117,7 +126,7 @@ struct WeekCard: View {
     let stats: ListeningStats
     @Environment(\.theme) private var theme
 
-    private var days: [(day: Date, seconds: Int)] { stats.recentDays(7) }
+    private var days: [(day: Date, seconds: Int)] { stats.weekDays() }
     private var peak: Int { max(days.map(\.seconds).max() ?? 0, 1) }
     private var daysWithListening: Int { days.filter { $0.seconds > 0 }.count }
 
@@ -205,6 +214,10 @@ struct DayRow: View {
             .buttonStyle(.plain)
 
             if isExpanded {
+                if sessions.reduce(0, { $0 + $1.seconds }) > seconds {
+                    Text("Overlapping sessions count once in the daily total.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 ForEach(sessions) { session in
                     HStack(spacing: 10) {
                         Image(systemName: "play.fill")

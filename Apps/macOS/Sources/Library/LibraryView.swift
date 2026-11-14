@@ -897,6 +897,18 @@ struct CoverImage: View {
         return cache
     }()
 
+    private var serverIdentifier: String {
+        app.sectionID?.split(separator: ":").first.map(String.init) ?? "unselected"
+    }
+
+    private var artworkRevision: String {
+        app.artworkVersions[serverIdentifier + "\0" + (thumb ?? "")] ?? ""
+    }
+
+    private var cacheKey: String {
+        ArtworkCache.key(serverIdentifier: serverIdentifier, thumb: thumb ?? "", width: Self.side, height: Self.side, revision: artworkRevision)
+    }
+
     var body: some View {
         Group {
             if let image {
@@ -927,13 +939,16 @@ struct CoverImage: View {
         // cover for the book it is now showing rather than keeping the last
         // one. `AsyncImage` handled that itself, which is the one thing lost by
         // replacing it — and the one thing easy to get wrong here.
-        .task(id: thumb) {
+        .task(id: cacheKey) {
+            let requestKey = cacheKey
+            let requestServer = serverIdentifier
+            let requestRevision = artworkRevision
             guard let thumb, !thumb.isEmpty else {
                 image = nil
                 return
             }
 
-            if let ready = Self.decoded.object(forKey: thumb as NSString) {
+            if let ready = Self.decoded.object(forKey: requestKey as NSString) {
                 image = ready
                 return
             }
@@ -942,13 +957,15 @@ struct CoverImage: View {
 
             guard let bytes = await ArtworkCache.shared.data(
                 forThumb: thumb,
+                serverIdentifier: requestServer,
                 width: Self.side,
                 height: Self.side,
-                url: app.server?.artworkURL(thumb: thumb, width: Self.side, height: Self.side)
+                url: app.server?.artworkURL(thumb: thumb, width: Self.side, height: Self.side),
+                revision: requestRevision
             ) else { return }
 
-            guard let decoded = NSImage(data: bytes) else { return }
-            Self.decoded.setObject(decoded, forKey: thumb as NSString)
+            guard let decoded = NSImage(data: bytes), !Task.isCancelled, requestKey == cacheKey else { return }
+            Self.decoded.setObject(decoded, forKey: requestKey as NSString)
 
             // The cell may have been reused while the bytes were being read.
             guard thumb == self.thumb else { return }

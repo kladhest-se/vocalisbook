@@ -51,7 +51,7 @@ struct OfflineView: View {
         // two before and may again.
         Group {
             ScrollView {
-                if !entries.isEmpty {
+                if !entries.isEmpty || totalBytes > 0 {
                     header
                 }
 
@@ -95,9 +95,11 @@ struct OfflineView: View {
 
                 if entries.isEmpty {
                     ContentUnavailableView(
-                        "Nothing downloaded",
+                        totalBytes > 0 ? "Older downloads retained" : "Nothing downloaded",
                         systemImage: "arrow.down.circle",
-                        description: Text("Books you download are kept here and play without a connection.")
+                        description: Text(totalBytes > 0
+                            ? "Some saved files need verification. Remove all deletes these files while keeping your listening history."
+                            : "Books you download are kept here and play without a connection.")
                     )
                     .padding(.top, 60)
                 }
@@ -226,9 +228,8 @@ struct OfflineView: View {
         // about the rest, and somebody who pressed "remove all" is asking about
         // the outcome of the whole thing.
         app.save(while: "remove those downloads") {
-            for entry in entries {
-                try app.downloads.evict(bookRatingKey: entry.book.ratingKey)
-            }
+            // Include retained legacy files whose books are no longer cached.
+            try app.downloads.evictAll()
         }
         refresh()
     }

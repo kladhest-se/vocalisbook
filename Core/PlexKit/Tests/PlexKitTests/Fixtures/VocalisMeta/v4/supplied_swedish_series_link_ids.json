@@ -1,0 +1,53 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "album",
+        "ratingKey": "101",
+        "parentRatingKey": "100",
+        "parentTitle": "Fixture Author",
+        "title": "Caf\u00e9 at Dawn",
+        "titleSort": "Saga 003.5 Cafe at Dawn",
+        "summary": "Synthetic audiobook fixture.",
+        "guid": "com.plexapp.agents.spokenmeta://isbn:9780593135204?lang=sv",
+        "originallyAvailableAt": "2020-01-01",
+        "updatedAt": 1800000000,
+        "thumb": "/library/metadata/101/thumb/1800000000",
+        "Mood": [
+          {
+            "tag": "Fixture Author"
+          },
+          {
+            "tag": "Series: Saga"
+          },
+          {
+            "tag": "Sequence: Saga #3.5"
+          },
+          {
+            "tag": "Language: Swedish"
+          },
+          {
+            "tag": "VocalisMeta-v4: cf200b46527ded2ed90e66ad754df7b3df489f098600be0dc1fc227f21dc00d5:1/3:eNrNlttu3CAQhl8l4npTAcanvata9QGayzSyBhjv0vWCi7G30WrfveBd5aQ0aZU0jeQLMJ6Zj5nhN3uiOgSPurGwxaEHhQNZXl4tiHI2eFChmdAPxlmyFAvSGux0_GBPwIed85s07L2b0IJVmGY4GY3zmIx2Y93OkgUZ3OjvvTosiEcYkltiXWNx14BS2IdIYrawwmQUoIs2LXQDzrNw3-kE3Rjf2LHrojsYw9r5mS0BBBOum0dZfoubFuLEN1sIan2Xuvs-auk2A_iNmTAk-sfhHqBdki_mZxg9nn2c6cjV4ZRYI8dwon1p-o6LjXWhcXJAP6H-8-RdJiLUJswV_s8wp0p2YFdjaoGneF6_WORiFxMxrJOBBe8hvN92-ooQ"
+          },
+          {
+            "tag": "VocalisMeta-v4: cf200b46527ded2ed90e66ad754df7b3df489f098600be0dc1fc227f21dc00d5:2/3:Pc_t5FE5r41dNXo2etucccrpOWXxmW3QGxzemGFPtriVUaTWpk_atb-NYfSxfqkxYQXnUbJSROX65OeZ4B7buOCxg3Q4kvclZwCUcVq1taCcsQqrImNaYV0xLnOkWCpVyVzJVnMUHHnLqiwvKsioKCmkiPhjPKWCx2nsq7TDGS8GfYLdWXwRu1aUKZG3THKeQYFFWVe5YBIky0ohsrbEomUMpaK6ZowXgmW8oKpEVmiBD9izD_kd-ouZ_iodhije_rr5F_EPh5uAb9vjn6D9NlKK9RmEs89wVLzX-vm9hmAmlqYfZWcUvB8hj95ulHPsVz4q1ulqcSzNM3XbYvxj6r-t6K0abvA6baN3G7TRFyzNIO2yLiua1xnLck4FSd9P"
+          },
+          {
+            "tag": "VocalisMeta-v4: cf200b46527ded2ed90e66ad754df7b3df489f098600be0dc1fc227f21dc00d5:3/3:Jt1u7t9pEv9MAFFTIblZA8-LpZCa0VqJSqQjnrVUsVIVRUsFVqyqpCx5LlFDzupMsqqsCsA656VouUImaOzhX-uROsw"
+          }
+        ],
+        "Style": [
+          {
+            "tag": "Fixture Reader"
+          }
+        ],
+        "Genre": [
+          {
+            "tag": "Fiction"
+          }
+        ]
+      }
+    ]
+  }
+}

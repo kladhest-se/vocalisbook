@@ -140,10 +140,23 @@ public struct LibrarySync: Sendable {
         onSeries: (@Sendable (Int, Int) -> Void)? = nil,
         onDetailRefresh: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> Int {
+        try await store.serializeRefresh {
+            try await performRefreshBooks(pageSize: pageSize, incremental: incremental,
+                onPage: onPage, onSeries: onSeries, onDetailRefresh: onDetailRefresh)
+        }
+    }
+
+    private func performRefreshBooks(
+        pageSize: Int, incremental: Bool,
+        onPage: (@Sendable (Int, Int?) -> Void)?,
+        onSeries: (@Sendable (Int, Int) -> Void)?,
+        onDetailRefresh: (@Sendable (Int, Int) -> Void)?
+    ) async throws -> Int {
+        guard pageSize > 0 else { throw SyncError.incompleteLibrary }
+        var seen = Set<String>()
         var offset = 0
         var total: Int?
         let startedAt = Date()
-        var needsFullRefresh: [String] = []
 
         let since = incremental ? try store.lastSynced(sectionID: sectionID) : nil
 
@@ -155,15 +168,18 @@ public struct LibrarySync: Sendable {
                 limit: pageSize,
                 updatedSince: since
             )
-            total = page.totalSize ?? total
-            guard !page.metadata.isEmpty else { break }
-
-            // Checked against what is cached *before* this page overwrites it —
-            // afterwards the comparison would always agree, since the write
-            // just happened.
-            needsFullRefresh += (try? store.booksNeedingFullRefresh(
-                among: page.metadata.map { ($0.ratingKey, $0.updatedAt) }
-            )) ?? []
+            if let reported = page.totalSize {
+                guard reported >= 0, total == nil || total == reported,
+                      offset + page.metadata.count <= reported else { throw SyncError.incompleteLibrary }
+                total = reported
+            }
+            guard !page.metadata.isEmpty else {
+                if let total, offset < total { throw SyncError.incompleteLibrary }
+                break
+            }
+            let oldCount = seen.count
+            seen.formUnion(page.metadata.map(\.ratingKey))
+            guard seen.count == oldCount + page.metadata.count else { throw SyncError.incompleteLibrary }
 
             try store.cacheBookList(page.metadata, sectionID: sectionID)
 
@@ -184,7 +200,7 @@ public struct LibrarySync: Sendable {
             onPage?(offset, total)
 
             if let total, offset >= total { break }
-            if page.metadata.count < pageSize { break }
+            if total == nil && page.metadata.count < pageSize { break }
         }
 
         // Series tags, on a full sync.
@@ -197,12 +213,14 @@ public struct LibrarySync: Sendable {
         // re-matches something, which is rare and deliberate, and this costs a
         // request per series.
         if since == nil {
+            try Task.checkCancellation()
+            try store.reconcileFullScan(sectionID: sectionID, seen: seen, startedAt: startedAt)
             _ = try? await refreshSeriesTags(onProgress: onSeries)
             // Only here, not on an incremental sync: an incremental page is a
             // partial view of the library by design, and a book missing from
             // it means nothing. Only a full sync is a complete enough picture
             // of "this book is not here" to act on.
-            _ = try? downloadStore.evictMissingFromLibrary()
+            // Downloaded copies are retained even when absent from the server.
         }
 
         // Books whose `updatedAt` changed get their full detail re-fetched —
@@ -216,13 +234,15 @@ public struct LibrarySync: Sendable {
         // side could otherwise turn one sync into hundreds of sequential
         // requests. A capped, steady catch-up across however many syncs it
         // takes is a better trade than one sync that hangs.
-        let capped = Array(needsFullRefresh.prefix(Self.maxDetailRefreshesPerSync))
+        let capped = try store.booksAwaitingDetail(sectionID: sectionID, limit: Self.maxDetailRefreshesPerSync)
         for (index, ratingKey) in capped.enumerated() {
             try Task.checkCancellation()
+            try store.noteDetailAttempt(ratingKey: ratingKey)
             _ = try? await refreshBook(ratingKey: ratingKey)
             onDetailRefresh?(index + 1, capped.count)
         }
 
+        try Task.checkCancellation()
         try store.markSynced(sectionID: sectionID, at: startedAt)
         return offset
     }
@@ -264,7 +284,9 @@ public struct LibrarySync: Sendable {
         let book = try await client.book(ratingKey: ratingKey)
         let tracks = try await client.tracks(bookRatingKey: ratingKey)
 
-        let timeline = BookTimeline(bookRatingKey: ratingKey, tracks: tracks)
+        let timeline = BookTimeline(bookRatingKey: ratingKey, tracks: tracks,
+                                    serverIdentifier: client.connection.serverIdentifier,
+                                    expectedTrackCount: book.leafCount)
         guard timeline.isComplete else {
             // At least one track had no duration, which means Plex has not
             // finished analysing the file. Caching now would bake wrong offsets
@@ -396,17 +418,26 @@ public struct ProgressSync: Sendable {
     /// block every other book's progress from syncing.
     @discardableResult
     public func drain(limit: Int = 50) async throws -> Result {
+        try await store.serializeUpload { try await drainQueued(limit: limit) }
+    }
+
+    private func drainQueued(limit: Int) async throws -> Result {
         var result = Result()
 
-        for entry in try store.pendingOutbox(limit: limit) {
+        try Task.checkCancellation()
+        for entry in try store.pendingOutbox(limit: limit, serverIdentifier: client.connection.serverIdentifier) {
+            try Task.checkCancellation()
+            // A queued value may outlive a server switch while waiting its turn.
+            // Never send the new server's reused rating key through an old client.
+            guard try library.serverIdentifier(bookRatingKey: entry.bookRatingKey) == client.connection.serverIdentifier else { continue }
             do {
                 try await push(entry)
-                try store.markSynced(
-                    bookRatingKey: entry.bookRatingKey,
-                    kind: entry.kind,
-                    absoluteMs: entry.absoluteMs
-                )
+                try store.markSynced(entry: entry)
                 result.pushed += 1
+            } catch PlexError.cancelled {
+                throw PlexError.cancelled
+            } catch is CancellationError {
+                throw CancellationError()
             } catch let error as PlexError where error.isAuthFailure {
                 // The token is bad. Stop rather than burning attempt counts on
                 // every remaining entry — they would all fail identically, and
@@ -607,6 +638,7 @@ public enum SyncError: Error, Sendable, Equatable {
     /// file. Retry later — do not cache a partial timeline.
     case metadataIncomplete(ratingKey: String)
     case timelineMissing(ratingKey: String)
+    case incompleteLibrary
 }
 
 extension SyncError: LocalizedError {
@@ -623,6 +655,8 @@ extension SyncError: LocalizedError {
             return "Plex hasn't finished analyzing this book's audio files yet."
         case .timelineMissing:
             return "This book's playback timeline isn't available yet."
+        case .incompleteLibrary:
+            return "Plex returned an incomplete library list. Your existing books have been kept; try refreshing again."
         }
     }
 
@@ -630,7 +664,7 @@ extension SyncError: LocalizedError {
         switch self {
         case .metadataIncomplete:
             return "Try again in a moment — this usually resolves once Plex finishes scanning the file."
-        case .timelineMissing:
+        case .timelineMissing, .incompleteLibrary:
             return nil
         }
     }

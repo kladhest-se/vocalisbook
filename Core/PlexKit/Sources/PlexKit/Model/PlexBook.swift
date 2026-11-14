@@ -28,6 +28,11 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
     public let lastViewedAt: Date?
     public let viewOffsetMs: Int?
     public let studio: String?
+    public let recordingReleaseDate: String?
+    /// Plex's provider-normalized score, out of ten; nil is unknown.
+    public let rating: Double?
+    public let metadataV4: VocalisMetaV4?
+    public let metadataV4Present: Bool
 
     /// Whatever agent matched this book says it is.
     ///
@@ -165,7 +170,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
     private static let reservedPrefixes = [
         seriesPrefix, sequencePrefix, languagePrefix, editionPrefix,
         workIDPrefix, contributorIDPrefix, workPublishedPrefix,
-        productionPrefix, ratingSourcePrefix, ratingCountPrefix,
+        productionPrefix, ratingSourcePrefix, ratingCountPrefix, VocalisMetaV4.prefix,
     ]
 
     /// From `metadata-contract-v3.json`'s own `value_regex` for
@@ -191,10 +196,22 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
     /// (rather than a single string comparison) existed to make cheap.
     private static let allowedRatingSources: Set<String> = ["Audible", "Ljudboksarkivet"]
 
+    private static func validReleaseDate(_ value: String) -> Bool {
+        guard value.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil else { return false }
+        let parts = value.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, parts[0] > 0 else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(year: parts[0], month: parts[1], day: parts[2])
+        guard let date = calendar.date(from: components) else { return false }
+        let result = calendar.dateComponents([.year, .month, .day], from: date)
+        return result.year == parts[0] && result.month == parts[1] && result.day == parts[2]
+    }
+
     enum CodingKeys: String, CodingKey {
         case ratingKey, key, title, titleSort, summary, year, thumb, art
         case guid, Guid
-        case parentTitle, parentRatingKey, studio
+        case parentTitle, parentRatingKey, studio, originallyAvailableAt, originally_available_at, rating
         case leafCount, viewedLeafCount, duration
         case addedAt, updatedAt, lastViewedAt, viewOffset
         case Genre, Mood, Style
@@ -299,6 +316,9 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
         self.lastViewedAt = c.plexDate(.lastViewedAt)
         self.viewOffsetMs = c.plexInt(.viewOffset)
         self.studio = c.plexString(.studio).map(PlexProse.repairingMojibake)
+        self.recordingReleaseDate = (c.plexString(.originallyAvailableAt) ?? c.plexString(.originally_available_at))
+            .flatMap { Self.validReleaseDate($0) ? $0 : nil }
+        self.rating = c.plexDouble(.rating).flatMap { $0.isFinite && (0...10).contains($0) ? $0 : nil }
         // Attribute or child, because Plex builds differ.
         //
         // The contract says to support both and to prefer the VocalisMeta one:
@@ -329,6 +349,9 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
             .compactMap(\.tag)
             .map(PlexProse.repairingMojibake)
             .filter { !$0.isEmpty }
+
+        self.metadataV4Present = moods.contains { $0.hasPrefix(VocalisMetaV4.prefix) }
+        self.metadataV4 = try? VocalisMetaV4.decode(moods: moods, guid: self.guid)
 
         self.series = moods
             .filter { $0.hasPrefix(Self.seriesPrefix) }
@@ -401,7 +424,7 @@ public struct PlexBook: Decodable, Sendable, Hashable, Identifiable {
             .map { String($0.dropFirst(Self.ratingSourcePrefix.count)) }
             .flatMap { Self.allowedRatingSources.contains($0) ? $0 : nil }
 
-        self.ratingCount = moods
+        self.ratingCount = self.ratingSource == nil ? nil : moods
             .first { $0.hasPrefix(Self.ratingCountPrefix) }
             .map { String($0.dropFirst(Self.ratingCountPrefix.count)) }
             .flatMap { Int($0) }

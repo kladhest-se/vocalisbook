@@ -37,8 +37,8 @@ struct ArtworkCacheBehaviourTests {
             return Data("cover".utf8)
         }
 
-        let first = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
-        let second = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
+        let first = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
+        let second = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
 
         #expect(first == Data("cover".utf8))
         #expect(second == first)
@@ -58,8 +58,8 @@ struct ArtworkCacheBehaviourTests {
             return nil
         }
 
-        _ = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
-        _ = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
+        _ = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
+        _ = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
 
         // Tried again rather than remembering the failure.
         #expect(fetches.count == 2)
@@ -76,9 +76,9 @@ struct ArtworkCacheBehaviourTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let cache = ArtworkCache(directory: directory) { _ in Data("cover".utf8) }
-        _ = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
+        _ = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
 
-        let offline = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: nil)
+        let offline = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: nil)
         #expect(offline == Data("cover".utf8))
     }
 
@@ -88,7 +88,7 @@ struct ArtworkCacheBehaviourTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let cache = ArtworkCache(directory: directory) { _ in Data("cover".utf8) }
-        let result = await cache.data(forThumb: "/missing", width: 400, height: 400, url: nil)
+        let result = await cache.data(forThumb: "/missing", serverIdentifier: "test-server", width: 400, height: 400, url: nil)
         #expect(result == nil)
     }
 
@@ -100,7 +100,7 @@ struct ArtworkCacheBehaviourTests {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let cache = ArtworkCache(directory: directory) { _ in Data("cover".utf8) }
-        _ = await cache.data(forThumb: "/thumb", width: 400, height: 400, url: url)
+        _ = await cache.data(forThumb: "/thumb", serverIdentifier: "test-server", width: 400, height: 400, url: url)
 
         let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(files.count == 1)
@@ -119,13 +119,13 @@ struct ArtworkCacheBehaviourTests {
 
         for index in 0..<5 {
             _ = await cache.data(
-                forThumb: "/thumb\(index)", width: 400, height: 400, url: url
+                forThumb: "/thumb\(index)", serverIdentifier: "test-server", width: 400, height: 400, url: url
             )
             // Distinct access times, which is what the sweep orders on.
             try setAccessDate(
                 Date(timeIntervalSince1970: 1_700_000_000 + Double(index)),
                 on: directory.appendingPathComponent(
-                    ArtworkCache.key(thumb: "/thumb\(index)", width: 400, height: 400)
+                    ArtworkCache.key(serverIdentifier: "test-server", thumb: "/thumb\(index)", width: 400, height: 400)
                 )
             )
         }
@@ -136,8 +136,8 @@ struct ArtworkCacheBehaviourTests {
         let left = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(left.count == 2)
         // The two most recently touched.
-        #expect(left.contains { $0.contains("thumb4") })
-        #expect(left.contains { $0.contains("thumb3") })
+        #expect(left.contains(ArtworkCache.key(serverIdentifier: "test-server", thumb: "/thumb4", width: 400, height: 400)))
+        #expect(left.contains(ArtworkCache.key(serverIdentifier: "test-server", thumb: "/thumb3", width: 400, height: 400)))
     }
 
     @Test("Pruning under the limit removes nothing")
@@ -147,13 +147,30 @@ struct ArtworkCacheBehaviourTests {
 
         let cache = ArtworkCache(directory: directory) { _ in Data(repeating: 0x41, count: 10) }
         for index in 0..<3 {
-            _ = await cache.data(forThumb: "/thumb\(index)", width: 400, height: 400, url: url)
+            _ = await cache.data(forThumb: "/thumb\(index)", serverIdentifier: "test-server", width: 400, height: 400, url: url)
         }
 
         await cache.prune(maxBytes: 1_000_000)
 
         let left = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(left.count == 3)
+    }
+
+    @Test("A changed artwork revision fetches new bytes at the same URL and keeps both versions offline")
+    func changedRevisionAtSameURL() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fetches = Counter()
+        let cache = ArtworkCache(directory: directory) { _ in
+            fetches.bump()
+            return Data("cover-\(fetches.count)".utf8)
+        }
+        let first = await cache.data(forThumb: "/thumb", serverIdentifier: "A", width: 400, height: 400, url: url, revision: "old")
+        let changed = await cache.data(forThumb: "/thumb", serverIdentifier: "A", width: 400, height: 400, url: url, revision: "new")
+        let offline = await cache.data(forThumb: "/thumb", serverIdentifier: "A", width: 400, height: 400, url: nil, revision: "new")
+        let original = await cache.data(forThumb: "/thumb", serverIdentifier: "A", width: 400, height: 400, url: nil, revision: "old")
+        #expect(first == Data("cover-1".utf8) && changed == Data("cover-2".utf8))
+        #expect(offline == changed && original == first && fetches.count == 2)
     }
 
     private func setAccessDate(_ date: Date, on file: URL) throws {

@@ -33,11 +33,16 @@ public enum Schema {
         registerV12(&migrator)
         registerV13(&migrator)
         registerV14(&migrator)
+        registerV15(&migrator)
+        registerV16(&migrator)
+        registerV17(&migrator)
+        registerV18(&migrator)
+        registerV19(&migrator)
         return migrator
     }
 
     /// Current version, for logging and for the tvOS cache-validity check.
-    public static let currentVersion = "v14_local_identity_and_session_owner"
+    public static let currentVersion = "v19_vocalismeta_v4"
 
     private static func registerV1(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v1_initial") { db in
@@ -648,4 +653,85 @@ public enum Schema {
         }
     }
 
+    private static func registerV15(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v15_scoped_audio_and_complete_timelines") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "timeline_complete", .boolean).notNull().defaults(to: false)
+            }
+            try db.alter(table: "download") { t in
+                t.add(column: "requires_verification", .boolean).notNull().defaults(to: false)
+            }
+            // Retain all files, paths, byte counts and cached tracks. Legacy
+            // rows lack proof of server ownership and must not serve playback.
+            try db.execute(sql: """
+                UPDATE download SET requires_verification = 1, state = 'failed',
+                    last_error = 'This older download needs server verification. Download the book again to enable offline playback.'
+                """)
+        }
+    }
+
+    private static func registerV16(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v16_plex_outbox_attempt_time") { db in
+            try db.alter(table: "outbox") { t in
+                t.add(column: "last_attempt_at", .datetime)
+            }
+            // Older rows have no attempt timestamp. Begin their existing retry
+            // delay at upgrade, retaining the mutation's original event time.
+            try db.execute(
+                sql: "UPDATE outbox SET last_attempt_at = ? WHERE attempts > 0",
+                arguments: [Date()]
+            )
+        }
+    }
+
+    private static func registerV17(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v17_listening_checkpoints") { db in
+            try db.create(table: "sync_health") { t in
+                t.primaryKey("destination", .text)
+                t.column("last_success", .datetime).notNull()
+            }
+            try db.alter(table: "listening_session") { t in
+                t.add(column: "last_listened_at", .datetime)
+                t.add(column: "last_listened_ms", .integer)
+            }
+        }
+    }
+
+    private static func registerV18(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v18_agent_metadata_projection") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "recording_release_date", .text)
+                t.add(column: "publisher", .text)
+                t.add(column: "rating", .double)
+                t.add(column: "detail_needs_refresh", .boolean).notNull().defaults(to: true)
+                t.add(column: "last_detail_attempt_at", .datetime)
+            }
+            try db.alter(table: "book_series") { t in
+                t.add(column: "display_order", .integer).notNull().defaults(to: 0)
+            }
+        }
+    }
+
+    private static func registerV19(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v19_vocalismeta_v4") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "v4_payload", .blob)
+                t.add(column: "v4_available", .boolean).notNull().defaults(to: false)
+                t.add(column: "v4_mismatches", .text).notNull().defaults(to: "")
+                t.add(column: "metadata_revision", .text)
+                t.add(column: "artwork_revision", .text)
+            }
+            try db.create(table: "recording_metadata_archive") { t in
+                t.primaryKey("identity_key", .text)
+                t.column("payload", .blob).notNull()
+            }
+            try db.create(table: "identity_upgrade_backups") { t in
+                t.primaryKey("id", .text)
+                t.column("previous_identity", .text).notNull()
+                t.column("current_identity", .text).notNull()
+                t.column("created_at", .datetime).notNull()
+                t.column("payload", .blob).notNull()
+            }
+        }
+    }
 }

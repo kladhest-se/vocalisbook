@@ -18,6 +18,8 @@ public final class AudiobookDatabase: Sendable {
 
     public let writer: any DatabaseWriter
     public let durability: Durability
+    let plexUploads = AsyncSerialQueue()
+    let libraryRefreshes = AsyncSerialQueue()
 
     private init(writer: any DatabaseWriter, durability: Durability) {
         self.writer = writer
@@ -107,6 +109,8 @@ public final class AudiobookDatabase: Sendable {
             try db.execute(sql: "DELETE FROM download")
             try db.execute(sql: "DELETE FROM cloud_progress")
             try db.execute(sql: "DELETE FROM cloud_pending_record")
+            try db.execute(sql: "DELETE FROM identity_upgrade_backups")
+            try db.execute(sql: "DELETE FROM recording_metadata_archive")
 
             // So the next refresh is a full one rather than an incremental sync
             // against a stamp describing a library that is no longer here.
@@ -132,6 +136,7 @@ public final class AudiobookDatabase: Sendable {
             try db.execute(sql: "DELETE FROM outbox")
             try db.execute(sql: "DELETE FROM cloud_progress")
             try db.execute(sql: "DELETE FROM cloud_pending_record")
+            try db.execute(sql: "DELETE FROM identity_upgrade_backups")
         }
     }
 

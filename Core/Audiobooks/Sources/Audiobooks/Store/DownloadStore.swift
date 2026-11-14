@@ -22,6 +22,7 @@ public struct DownloadStore: Sendable {
         try database.writer.write { db in
             for segment in segments {
                 let existing = try DownloadRecord.fetchOne(db, key: segment.partCacheKey)
+                if existing?.requiresVerification == true { continue }
                 if let existing, [DownloadRecord.State.complete.rawValue,
                                   DownloadRecord.State.queued.rawValue,
                                   DownloadRecord.State.downloading.rawValue].contains(existing.state) { continue }
@@ -44,7 +45,7 @@ public struct DownloadStore: Sendable {
 
     public func markDownloading(partCacheKey: String, bytesDone: Int, bytesTotal: Int?) throws {
         try database.writer.write { db in
-            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey) else { return }
+            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey), !record.requiresVerification else { return }
             record.state = DownloadRecord.State.downloading.rawValue
             record.bytesDone = bytesDone
             if let bytesTotal { record.bytesTotal = bytesTotal }
@@ -54,7 +55,7 @@ public struct DownloadStore: Sendable {
 
     public func markComplete(partCacheKey: String, relativePath: String, bytes: Int, now: Date = Date()) throws {
         try database.writer.write { db in
-            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey) else { return }
+            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey), !record.requiresVerification else { return }
             record.state = DownloadRecord.State.complete.rawValue
             record.relativePath = relativePath
             record.bytesDone = bytes
@@ -67,7 +68,7 @@ public struct DownloadStore: Sendable {
 
     public func markFailed(partCacheKey: String, error: String) throws {
         try database.writer.write { db in
-            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey) else { return }
+            guard var record = try DownloadRecord.fetchOne(db, key: partCacheKey), !record.requiresVerification else { return }
             record.state = DownloadRecord.State.failed.rawValue
             record.lastError = error
             try record.save(db)
@@ -106,7 +107,7 @@ public struct DownloadStore: Sendable {
     public func relativePath(forPartCacheKey key: String) throws -> String? {
         try database.writer.read { db in
             try DownloadRecord.fetchOne(db, key: key).flatMap { record in
-                record.state == DownloadRecord.State.complete.rawValue ? record.relativePath : nil
+                record.state == DownloadRecord.State.complete.rawValue && !record.requiresVerification ? record.relativePath : nil
             }
         }
     }
@@ -238,7 +239,7 @@ public struct DownloadStore: Sendable {
             let stale = try DownloadRecord
                 .filter(Column("book_rating_key") == bookRatingKey)
                 .fetchAll(db)
-                .filter { !wanted.contains($0.partCacheKey) }
+                .filter { !wanted.contains($0.partCacheKey) && !$0.requiresVerification }
 
             for record in stale { try record.delete(db) }
             return stale.count
@@ -266,7 +267,8 @@ public struct DownloadStore: Sendable {
     public func totalBytes() throws -> Int {
         try database.writer.read { db in
             try Int.fetchOne(db, sql: """
-                SELECT COALESCE(SUM(bytes_done), 0) FROM download WHERE state = ?
+                SELECT COALESCE(SUM(bytes_done), 0) FROM download
+                WHERE state = ? OR (requires_verification = 1 AND relative_path IS NOT NULL)
                 """, arguments: [DownloadRecord.State.complete.rawValue]) ?? 0
         }
     }
@@ -324,12 +326,12 @@ public struct DownloadStore: Sendable {
         try database.writer.write { db in
             let orphaned = try DownloadRecord.fetchAll(db, sql: """
                 SELECT * FROM download
-                WHERE book_rating_key NOT IN (SELECT rating_key FROM book)
+                WHERE book_rating_key NOT IN (SELECT rating_key FROM book) AND requires_verification = 0
                 """)
             guard !orphaned.isEmpty else { return [] }
             try db.execute(sql: """
                 DELETE FROM download
-                WHERE book_rating_key NOT IN (SELECT rating_key FROM book)
+                WHERE book_rating_key NOT IN (SELECT rating_key FROM book) AND requires_verification = 0
                 """)
             return orphaned.compactMap(\.relativePath)
         }

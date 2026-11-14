@@ -38,6 +38,8 @@ public struct OutboxEntry: Sendable, Hashable, Identifiable {
     public var revision: Int
     public var attempts: Int
     public var lastError: String?
+    /// Most recent failed request completion; independent of the local edit time.
+    public var lastAttemptAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -47,7 +49,8 @@ public struct OutboxEntry: Sendable, Hashable, Identifiable {
         recordedAt: Date,
         revision: Int,
         attempts: Int = 0,
-        lastError: String? = nil
+        lastError: String? = nil,
+        lastAttemptAt: Date? = nil
     ) {
         self.id = id
         self.bookRatingKey = bookRatingKey
@@ -57,6 +60,7 @@ public struct OutboxEntry: Sendable, Hashable, Identifiable {
         self.revision = revision
         self.attempts = attempts
         self.lastError = lastError
+        self.lastAttemptAt = lastAttemptAt
     }
 }
 

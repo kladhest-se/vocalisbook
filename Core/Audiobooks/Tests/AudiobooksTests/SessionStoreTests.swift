@@ -46,7 +46,7 @@ struct SessionStoreTests {
             try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
         }
 
-        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now.addingTimeInterval(600), calendar: calendar)
         #expect(stats.currentStreak == 3)
         #expect(stats.longestStreak == 3)
     }
@@ -63,7 +63,7 @@ struct SessionStoreTests {
             try store.end(atMs: 600_000, now: start.addingTimeInterval(600))
         }
 
-        let stats = try store.stats(sectionID: "test-section", now: now, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: now.addingTimeInterval(600), calendar: calendar)
         #expect(stats.currentStreak == 1)
         #expect(stats.longestStreak == 4)
     }
@@ -98,7 +98,7 @@ struct SessionStoreTests {
         try store.begin(bookRatingKey: "901", atMs: 0, rate: 1, sectionID: "test-section", now: later)
         try store.end(atMs: 600_000, now: later.addingTimeInterval(600))
 
-        let stats = try store.stats(sectionID: "test-section", now: later, calendar: calendar)
+        let stats = try store.stats(sectionID: "test-section", now: later.addingTimeInterval(600), calendar: calendar)
         #expect(stats.secondsPerDay[calendar.startOfDay(for: start)] == nil)
         #expect(stats.currentStreak == 1)
     }

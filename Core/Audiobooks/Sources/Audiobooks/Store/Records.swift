@@ -23,6 +23,18 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
     public var addedAt: Date?
     public var plexUpdatedAt: Date?
     public var cachedAt: Date
+    public var recordingReleaseDate: String?
+    public var publisher: String?
+    public var rating: Double?
+    public var detailNeedsRefresh: Bool
+    public var v4Payload: Data?
+    public var v4Available: Bool
+    public var v4Mismatches: String
+    public var metadataRevision: String?
+    public var artworkRevision: String?
+    public var artworkCacheVersion: String {
+        (artworkRevision ?? "native") + "|" + String(plexUpdatedAt?.timeIntervalSince1970 ?? 0)
+    }
 
     /// The recording language, when the agent had evidence. Nil is unknown.
     public var language: String?
@@ -82,7 +94,16 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         workPublishedYear: Int? = nil,
         productionType: String? = nil,
         ratingSource: String? = nil,
-        ratingCount: Int? = nil
+        ratingCount: Int? = nil,
+        recordingReleaseDate: String? = nil,
+        publisher: String? = nil,
+        rating: Double? = nil,
+        detailNeedsRefresh: Bool = true,
+        v4Payload: Data? = nil,
+        v4Available: Bool = false,
+        v4Mismatches: String = "",
+        metadataRevision: String? = nil,
+        artworkRevision: String? = nil
     ) {
         self.ratingKey = ratingKey
         self.librarySectionID = librarySectionID
@@ -107,6 +128,15 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         self.productionType = productionType
         self.ratingSource = ratingSource
         self.ratingCount = ratingCount
+        self.recordingReleaseDate = recordingReleaseDate
+        self.publisher = publisher
+        self.rating = rating
+        self.detailNeedsRefresh = detailNeedsRefresh
+        self.v4Payload = v4Payload
+        self.v4Available = v4Available
+        self.v4Mismatches = v4Mismatches
+        self.metadataRevision = metadataRevision
+        self.artworkRevision = artworkRevision
     }
 
     enum CodingKeys: String, CodingKey {
@@ -128,6 +158,14 @@ public struct BookRecord: Codable, FetchableRecord, PersistableRecord, Sendable,
         case productionType = "production_type"
         case ratingSource = "rating_source"
         case ratingCount = "rating_count"
+        case recordingReleaseDate = "recording_release_date"
+        case publisher, rating
+        case detailNeedsRefresh = "detail_needs_refresh"
+        case v4Payload = "v4_payload"
+        case v4Available = "v4_available"
+        case v4Mismatches = "v4_mismatches"
+        case metadataRevision = "metadata_revision"
+        case artworkRevision = "artwork_revision"
     }
 }
 
@@ -299,6 +337,7 @@ public struct OutboxRecord: Codable, FetchableRecord, PersistableRecord, Sendabl
     public var revision: Int
     public var attempts: Int
     public var lastError: String?
+    public var lastAttemptAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, revision, attempts
@@ -306,6 +345,7 @@ public struct OutboxRecord: Codable, FetchableRecord, PersistableRecord, Sendabl
         case absoluteMs = "absolute_ms"
         case recordedAt = "recorded_at"
         case lastError = "last_error"
+        case lastAttemptAt = "last_attempt_at"
     }
 
     public init(entry: OutboxEntry) {
@@ -317,6 +357,15 @@ public struct OutboxRecord: Codable, FetchableRecord, PersistableRecord, Sendabl
         self.revision = entry.revision
         self.attempts = entry.attempts
         self.lastError = entry.lastError
+        self.lastAttemptAt = entry.lastAttemptAt
+    }
+
+    /// Transport metadata can change between retries; only the sent payload
+    /// identifies the coalesced mutation that a response may acknowledge.
+    func matches(_ entry: OutboxEntry) -> Bool {
+        id == entry.id.uuidString && bookRatingKey == entry.bookRatingKey
+            && kind == entry.kind.rawValue && absoluteMs == entry.absoluteMs
+            && recordedAt == entry.recordedAt && revision == entry.revision
     }
 
     public var entry: OutboxEntry? {
@@ -330,7 +379,8 @@ public struct OutboxRecord: Codable, FetchableRecord, PersistableRecord, Sendabl
             recordedAt: recordedAt,
             revision: revision,
             attempts: attempts,
-            lastError: lastError
+            lastError: lastError,
+            lastAttemptAt: lastAttemptAt
         )
     }
 }
@@ -351,6 +401,7 @@ public struct DownloadRecord: Codable, FetchableRecord, PersistableRecord, Senda
     public var relativePath: String?
     public var completedAt: Date?
     public var lastError: String?
+    public var requiresVerification: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case state
@@ -362,6 +413,7 @@ public struct DownloadRecord: Codable, FetchableRecord, PersistableRecord, Senda
         case relativePath = "relative_path"
         case completedAt = "completed_at"
         case lastError = "last_error"
+        case requiresVerification = "requires_verification"
     }
 }
 

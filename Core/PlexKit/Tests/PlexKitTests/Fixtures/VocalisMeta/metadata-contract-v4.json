@@ -1,0 +1,186 @@
+{
+  "contract": "VocalisMeta refresh, provenance and migration contract",
+  "contract_version": 4,
+  "status": "optional_client_first",
+  "extends": "metadata-contract-v3.json",
+  "plex": {
+    "field": "Mood.tag",
+    "preference": "store_client_contract_v4",
+    "json_config": "metadata.client_contract_v4",
+    "default_enabled": false,
+    "reserved_prefix": "VocalisMeta-v4: ",
+    "provider_access_required": false,
+    "companion_service_required": false
+  },
+  "transport": {
+    "tag_grammar": "VocalisMeta-v4: <64-lowercase-hex-sha256>:<1-based-index>/<count>:<base64url-segment>",
+    "canonical_payload_encoding": "ASCII JSON; ASCII schema object keys sorted lexicographically; NFC text values; ensure_ascii=true; no whitespace; no floats; unescaped slash; standard JSON short control escapes",
+    "compression": "zlib (RFC1950); digest is over uncompressed canonical JSON, never compressed bytes",
+    "binary_encoding": "unpadded base64url of the complete compressed payload, then split into chunks",
+    "chunk_characters": 384,
+    "max_chunks": 64,
+    "max_uncompressed_bytes": 16384,
+    "reject": [
+      "missing_or_duplicate_chunk",
+      "mixed_envelope",
+      "bad_digest",
+      "expansion_over_limit",
+      "bad_schema_or_version",
+      "noncanonical_payload",
+      "unsafe_identity_declaration"
+    ],
+    "failure_behavior": "Treat v4 as unavailable; retain last valid client projection. Still reserve every prefix from author parsing.",
+    "recording_binding": "Reference decode_for_recording binds the decoded recording_key to independently parsed v1 GUID/canonical key; mismatch is invalid."
+  },
+  "payload_required": [
+    "contract_version",
+    "recording_key",
+    "revisions",
+    "match",
+    "fields",
+    "cleared_namespaces",
+    "identity_upgrades"
+  ],
+  "fields": {
+    "title": "Plex album title; nullable text",
+    "authors": "Exact author/co-author Mood names, sorted NFC set; primary Plex artist remains a separate native field",
+    "narrators": "Exact Style names, sorted NFC set",
+    "series": "{primary_ref: null or relationship ref, memberships: [{ref,title,sequence,provider_id?}]}",
+    "recording_date": "Published Plex originallyAvailableAt, YYYY-MM-DD; provenance.date_kind distinguishes recording and literary-date fallbacks",
+    "language": "Published Language display label or null",
+    "edition": "Abridged, Unabridged, or null",
+    "work": "Validated v2 openlibrary:<OL\u2026W> or null; grouping only",
+    "work_publication": "Validated v3 year string or null",
+    "contributors": "Validated original v3 Contributor-ID tag strings; name source remains non-authoritative",
+    "artwork": "sha256:<accepted-input-bytes> or null; identical to revisions.artwork"
+  },
+  "field_attributes": {
+    "required": [
+      "state",
+      "value",
+      "stale",
+      "provenance"
+    ],
+    "optional": [
+      "reason",
+      "identity_evidence"
+    ],
+    "states": {
+      "known": "Use value; stale=true means retained previous evidence",
+      "unknown": "Unknown/unsupported; do not infer a clear or a negative fact",
+      "unavailable": "Temporary lookup problem; keep retained value/client cache and retry later",
+      "cleared": "Deliberate tombstone; remove only the corresponding agent-owned projection"
+    },
+    "provenance": {
+      "source": [
+        "audible",
+        "librivox",
+        "ljudboksarkivet",
+        "openlibrary",
+        "googlebooks",
+        "embedded_tags",
+        "embedded_artwork",
+        "local_artwork",
+        "remote_provider",
+        "manual",
+        "plex",
+        "unknown"
+      ],
+      "evidence": [
+        "explicit_identifier",
+        "provider_match",
+        "isbn_match",
+        "embedded_tags",
+        "manual_override",
+        "name_only",
+        "provider_identifier",
+        "local_file",
+        "unknown"
+      ],
+      "date_kind": [
+        "recording_release",
+        "copyright_year_fallback",
+        "work_year_fallback",
+        "book_edition_date_fallback",
+        "user_supplied_recording_date"
+      ]
+    },
+    "identity_evidence": [
+      "provider_identifier",
+      "name_only",
+      "unknown"
+    ]
+  },
+  "revisions": {
+    "metadata": "sha256:<canonical semantic published projection>; meaningful values, explicit primary/exact memberships, deliberate clears, and legacy published fields",
+    "artwork": "sha256:<accepted primary image input bytes>; exclude URLs, poster keys, transcodes and timestamps",
+    "metadata_excludes": [
+      "availability_health",
+      "provenance_freshness",
+      "diagnostics",
+      "scores",
+      "timestamps",
+      "poster_urls",
+      "private_paths",
+      "credentials"
+    ],
+    "ordering": "Set-valued strings sorted by canonical escaped JSON bytes after NFC/deduplication. Primary series explicit, secondaries sorted by relationship ref.",
+    "rating": "Existing numeric rating is quantized to six decimal places and serialized as trimmed decimal text in the metadata projection.",
+    "client_behavior": "Use each revision for its own cache. Always inspect state/provenance on a new detail response even when revisions are unchanged."
+  },
+  "series_rules": {
+    "reference": "relationship:SHA256(canonical {title,sequence,provider_id?}); an envelope-local relationship ref, NOT an authoritative series ID",
+    "authoritative_ids": {
+      "audible": {
+        "id": "Provider-supplied valid series ASIN",
+        "scope": "Audible region"
+      },
+      "ljudboksarkivet": {
+        "id": "Safe same-provider /bokserie/<slug> link actually supplied by the page",
+        "scope": "empty string"
+      }
+    },
+    "no_id": "Keep exact NFC display title/sequence; never invent an authoritative identifier from the name",
+    "primary": "Fresh provider order or explicit embedded/manual series selection; preserve prior v4 primary on partial response. Never infer from returned Mood order.",
+    "total": "Not published; indexed library coverage is not a publisher-defined total"
+  },
+  "identity_upgrades": {
+    "fields": [
+      "previous",
+      "current",
+      "status",
+      "evidence",
+      "reasons",
+      "requires_client_confirmation"
+    ],
+    "status": [
+      "verified_same_recording",
+      "review_required"
+    ],
+    "requires_client_confirmation": true,
+    "verified_conditions": [
+      "previous canonical key is local",
+      "new key is an exact-confirmed Audible or LibriVox recording",
+      "same explicit ASIN and region present in both stored recording profiles OR same explicit LibriVox project in both",
+      "no known language, abridgment, narrator, runtime or explicit recording-ID conflicts"
+    ],
+    "runtime_tolerance": "max(60000 milliseconds, 0.5% of the shorter known runtime)",
+    "never_sufficient_alone": [
+      "title_similarity",
+      "work_identity",
+      "contributor_identity",
+      "ISBN"
+    ],
+    "strong_conflict_behavior": "Review required, including different Audible regions/editions. No automatic equivalence.",
+    "application_behavior": "Preview and ask the user before copying/merging state. Agent never reads/writes listening databases."
+  },
+  "rollout": [
+    "All readers first reserve the prefix, even if not parsing v4",
+    "Implement and test the parser/cache/migration safeguards in compatible clients",
+    "User enables v4 on a test library only after every reader is compatible",
+    "Refresh albums; missing v4 never means v1-v3 data or listening state was cleared"
+  ],
+  "reference_implementation": "VocalisMeta.bundle/Contents/Code/contract_v4_core.py",
+  "vectors": "test-vectors-v4.json",
+  "fixtures": "fixtures/v4/"
+}

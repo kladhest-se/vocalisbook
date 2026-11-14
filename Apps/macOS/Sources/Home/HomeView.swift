@@ -23,6 +23,7 @@ struct HomeView: View {
     let showHistory: () -> Void
 
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.theme) private var theme
     @State private var model = HomeModel()
 
@@ -174,6 +175,10 @@ struct HomeView: View {
         .onAppear { app.beginLiveUpdates() }
         .onDisappear { app.endLiveUpdates() }
         .onChange(of: app.libraryRevision) { _, _ in model.reload(app: app) }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { model.reload(app: app) } }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in model.reload(app: app) }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in model.reload(app: app) }
+        .onChange(of: app.historyRevision) { _, _ in model.reload(app: app) }
         // No player observers here any more.
         //
         // The playing book is dropped by `visible(app:)`, which reads the player

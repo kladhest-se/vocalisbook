@@ -65,28 +65,35 @@ public struct BookTimeline: Sendable, Hashable {
     public let chapters: [Chapter]
     public let totalDurationMs: Int
 
-    /// Builds a timeline from ordered tracks.
-    ///
-    /// Tracks with no duration are skipped rather than assumed to be zero
-    /// length: a missing duration means Plex has not finished analysing the
-    /// file, and including it would silently corrupt every absolute position
-    /// after it. The caller should treat a short timeline as "not ready yet"
-    /// and re-fetch, not as a complete book.
-    public init(bookRatingKey: String, tracks: [PlexTrack], chapters: [Chapter] = []) {
+    /// A book is usable only when every track has duration and a playable part.
+    /// Returning no segments on incomplete metadata prevents shortened offsets
+    /// from escaping into playback, downloads or saved progress.
+    public init(bookRatingKey: String, tracks: [PlexTrack], chapters: [Chapter] = [],
+                serverIdentifier: String? = nil, expectedTrackCount: Int? = nil) {
         self.bookRatingKey = bookRatingKey
+        guard !tracks.isEmpty,
+              expectedTrackCount.map({ $0 == tracks.count }) ?? true,
+              tracks.allSatisfy({ ($0.durationMs ?? 0) > 0 && !($0.primaryPart?.key.isEmpty ?? true) }) else {
+            self.segments = []; self.totalDurationMs = 0; self.chapters = []
+            return
+        }
 
         var cursor = 0
         var built: [Segment] = []
         for track in tracks {
             guard let duration = track.durationMs, duration > 0,
                   let part = track.primaryPart else { continue }
+            guard duration <= Int.max - cursor else {
+                self.segments = []; self.totalDurationMs = 0; self.chapters = []
+                return
+            }
             built.append(
                 Segment(
                     trackRatingKey: track.ratingKey,
                     trackKey: track.key,
                     partID: part.id,
                     partKey: part.key,
-                    partCacheKey: part.cacheKey,
+                    partCacheKey: serverIdentifier.map { part.cacheKey(serverIdentifier: $0) } ?? part.cacheKey,
                     title: track.title,
                     startMs: cursor,
                     durationMs: duration
@@ -102,13 +109,22 @@ public struct BookTimeline: Sendable, Hashable {
     /// Rebuilds a timeline from already-computed segments.
     ///
     /// Used when loading from cache, where the offsets were computed once at
-    /// cache time and read back rather than recalculated. Trusts the offsets it
-    /// is given — `CachedTimeline.isConsistent` is the check for that.
+    /// cache time and read back rather than recalculated. Rejects gaps, missing
+    /// parts and non-positive/overflowing durations before exposing segments.
     public init(bookRatingKey: String, segments: [Segment], chapters: [Chapter]) {
         self.bookRatingKey = bookRatingKey
-        self.segments = segments
-        self.totalDurationMs = segments.last?.endMs ?? 0
-        self.chapters = chapters.isEmpty ? Self.chaptersFromSegments(segments) : chapters
+        var expected = 0
+        var valid = !segments.isEmpty
+        for segment in segments {
+            guard segment.startMs == expected, segment.durationMs > 0,
+                  !segment.partKey.isEmpty, segment.durationMs <= Int.max - expected else {
+                valid = false; break
+            }
+            expected += segment.durationMs
+        }
+        self.segments = valid ? segments : []
+        self.totalDurationMs = valid ? expected : 0
+        self.chapters = valid ? (chapters.isEmpty ? Self.chaptersFromSegments(segments) : chapters) : []
     }
 
     public var isComplete: Bool { !segments.isEmpty }

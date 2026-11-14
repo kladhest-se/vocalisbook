@@ -1,0 +1,74 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "album",
+        "ratingKey": "101",
+        "parentRatingKey": "100",
+        "parentTitle": "Fixture Author",
+        "title": "Caf\u00e9 at Dawn",
+        "titleSort": "Saga 003.5 Cafe at Dawn",
+        "summary": "Synthetic audiobook fixture.",
+        "guid": "com.plexapp.agents.spokenmeta://B000000001_us?lang=en",
+        "originallyAvailableAt": "2020-01-01",
+        "updatedAt": 1800000000,
+        "thumb": "/library/metadata/101/thumb/1800000000",
+        "Mood": [
+          {
+            "tag": "Fixture Author"
+          },
+          {
+            "tag": "Series: Saga"
+          },
+          {
+            "tag": "Sequence: Saga #3.5"
+          },
+          {
+            "tag": "Series: The Saga Sequence"
+          },
+          {
+            "tag": "Sequence: The Saga Sequence #1"
+          },
+          {
+            "tag": "Language: English"
+          },
+          {
+            "tag": "Edition: Unabridged"
+          },
+          {
+            "tag": "Work-ID: openlibrary:OL123W"
+          },
+          {
+            "tag": "Work-Published: 1900"
+          },
+          {
+            "tag": "Contributor-ID: author:audible:B000000002 = Fixture Author"
+          },
+          {
+            "tag": "Contributor-ID: narrator:name:9303478f4aa8e7a9 = Ray Porter"
+          },
+          {
+            "tag": "VocalisMeta-v4: 393904057112e4ead6333619a773a623a68d6b1f193221b2a64874caed05ab63:1/3:eNrNVm2L4zYQ_ivGn3PFkizZMvTD9e4KhULLbks_XBczkkaJWMd2ZTl3Ycl_r-Qk-9K7ZduyLQkh8VjSM_PMi2buct0heDRtD1ucRtA45c3Hm1Wuhz540KHdoZ_c0OdNucqtw87EDXc5-PBp8LfpcfTDDnvoNSYJd87g8rwsRMG3Wwh6k6_yaZj9suJxOwRszxvywyq-gilpybthuJ3Hdu5hB64D1WE6GSD-N8HPuAghoTzdsoNuTm-nDVAumpIRjUZIIoACJUC4QFZXBQGLnCtlKlvXUkirlNVcRBELKU1ZWSp4KYpkE8xhM_iFbyIVXNi3X-N3XIzO8dGOZ92Bn8fOaReebr_3CczGJSav6IuP-ffuc5g9Zm8XJvnN4RRY"
+          },
+          {
+            "tag": "VocalisMeta-v4: 393904057112e4ead6333619a773a623a68d6b1f193221b2a64874caed05ab63:2/3:p-ZwYnZR9r57MO7ND--b7BiB5qSr-a44fWj2bfYXbqsvDvfgPUShSbndSFawsqptCVBjBTIiXME--3nwAY-eQePCkukX5ZT81x6Ud2aNJsF20K9nWOOlWfmhX3du2iTMs9-fLZwUj3bou_2llssVgjklhUc9eOP6dWuWo5fldVrQ4k1B4jfBTugdXlpR3-Vb3KrYRDZuTL3l7vG9ecyQeDRV9vWHq1jZCVwP44I3PWubXbpIB6lgE3JDalREiZpJVVaiEorEH2TWcCkZMUpxWUiiSip5rYFYKhGhLCWjyLgWMmnCP-aTm0gUY9YmivkvG8yuYQ3Z9Xn9sHqBBPmXJGrBCKVURaMoo4AoZG2Y4SUWsWlRoWoELYRBoY0kZaUR"
+          },
+          {
+            "tag": "VocalisMeta-v4: 393904057112e4ead6333619a773a623a68d6b1f193221b2a64874caed05ab63:3/3:CiTE1FbWGrl6SoJ9wx_RSBTyw02qOLcFv2__C_2Hw73CyyqUd2B_n4sCZQYhew-f-oT-4gTjJtV_Ob3EuPadUz468VVtfITb_PQjoey3s5HtOKvoMXixPf2_BhNZFEvI7y_5eVz7eHWeZsijIX8n9luMPdz8w9Q4X8y3uE9z3zjcYh-B4H5cmKeHiSGVpI92pFn26QT7ahPjQgNim4AHULBaIdcs1hIFQWtkVVkSy0obC4hYLSlwGi8iK4mEouRAolotSc1rE3F1dO-f-YryEw"
+          }
+        ],
+        "Style": [
+          {
+            "tag": "Fixture Reader"
+          }
+        ],
+        "Genre": [
+          {
+            "tag": "Fiction"
+          }
+        ]
+      }
+    ]
+  }
+}

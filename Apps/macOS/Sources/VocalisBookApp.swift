@@ -301,7 +301,10 @@ final class AppModel {
     /// it has no way to know a row appeared. Without this the sidebar only
     /// refreshed when the view was rebuilt — which is why shrinking to the mini
     /// player and back appeared to fix it.
-    private(set) var libraryRevision = 0
+    private(set) var artworkVersions: [String: String] = [:]
+    private(set) var libraryRevision = 0 {
+        didSet { artworkVersions = (try? library?.artworkVersions()) ?? [:] }
+    }
 
     /// Tells every screen the library has changed.
     ///
@@ -347,35 +350,20 @@ final class AppModel {
     func setActivity(_ text: String?) { activity = text }
 
 
-    /// Throws away everything this device has stored and starts again.
-    ///
-    /// The sign-in is untouched — the token lives in the keychain and the server
-    /// row is kept — so the next refresh fills the library straight back in.
-    /// Throws away this device's synced state and refills it from iCloud.
-    ///
-    /// The order matters. Local rows first, so nothing here outranks what
-    /// arrives; then the engine from scratch, so the server sends the whole zone.
-    ///
-    /// If the container is empty — nothing has ever synced — this leaves the
-    /// device with no positions and no bookmarks until Plex is asked again, which
-    /// the next refresh does. That is the honest cost of a deliberate resync and
-    /// the reason it is behind a switch rather than a button somebody presses by
-    /// accident.
-    private func resyncFromCloud() async {
+    /// Enable/resume cloud sync without discarding offline-only data.
+    /// Existing store conflict rules merge incoming records with local edits.
+    private func resumeCloudSync() async {
         guard let database else { return }
         guard !UserDefaults.standard.bool(forKey: "cloud.historyReset.pending") else {
-            storageFailure = "Clearing iCloud history did not finish. Retry Clear listening history before resyncing."
+            storageFailure = "Clearing iCloud history did not finish. Retry Clear listening history before enabling sync."
             return
-        }
-
-        save(while: "prepare this device for a resync") {
-            try database.purgeSyncedUserData()
         }
 
         if cloud == nil {
             await startCloudSync(database: database)
         } else {
-            await cloud?.restartFromScratch()
+            await cloud?.fetchChanges()
+            await cloud?.pushPending()
         }
 
         cloudChanged()
@@ -384,9 +372,50 @@ final class AppModel {
 
     /// The driver's own account of what it has done, for the Settings screen.
     private(set) var cloudStatus: CloudSyncDriver.Status?
+    private(set) var plexQueueStatus: SyncStore.QueueStatus?
+    private(set) var cloudPendingCount = 0
+
+    func retryCloudUpdates() {
+        guard iCloudSyncEnabled else { return }
+        Task {
+            if cloud == nil { await startCloudSync(database: database) }
+            await cloud?.pushPending()
+            await cloud?.fetchChanges()
+            await refreshCloudStatus()
+        }
+    }
+
+    func recordingUpgradeApplied() {
+        historyRevision += 1
+        libraryRevision += 1
+        flushProgress()
+    }
+
+    func exportListeningBackup() throws -> Data {
+        if player.state == .playing { try sessions.checkpoint(atMs: player.absoluteMs) }
+        return try ListeningBackupStore(database: database).export()
+    }
+
+    func importListeningBackup(_ data: Data) throws -> Int {
+        _ = try ListeningBackupStore.inspect(data)
+        player.pause()
+        let count = try ListeningBackupStore(database: database).restore(data)
+        historyRevision += 1
+        libraryRevision += 1
+        flushProgress()
+        return count
+    }
+
+    func retryPlexUpdates() {
+        save(while: "retry Plex updates") { try sync.retryFailedOutbox() }
+        flushProgress()
+        plexQueueStatus = try? sync.queueStatus()
+    }
 
     func refreshCloudStatus() async {
         cloudStatus = await cloud?.status
+        plexQueueStatus = try? sync?.queueStatus()
+        cloudPendingCount = (try? CloudSyncStore(database: database).pendingCount()) ?? 0
     }
 
     /// Clears the listening history: this device's, and iCloud's when it syncs.
@@ -586,6 +615,7 @@ final class AppModel {
         do {
             database = try StoreLocation.open()
             library = LibraryStore(database: database)
+            artworkVersions = try library.artworkVersions()
             refreshDownloadedKeys()
             refreshFinishedKeys()
 
@@ -600,6 +630,7 @@ final class AppModel {
             }
             sync = SyncStore(database: database)
             sessions = SessionStore(database: database)
+            try sessions.recoverInterruptedSessions()
 
             // After the stores, because the driver needs the database, and not
             // awaited here: an iCloud account check is a network call and the
@@ -718,6 +749,9 @@ final class AppModel {
                 sectionID: self.sectionID
             )
             self.startReportingNowPlaying()
+        }
+        player.onListeningCheckpoint = { [weak self] absoluteMs in
+            try? self?.sessions.checkpoint(atMs: absoluteMs)
         }
         player.skipIntervalSeconds =
             UserDefaults.standard.object(forKey: "skipInterval") as? Int ?? 30
@@ -1047,6 +1081,7 @@ final class AppModel {
     func retryCloudAfterCrash() {
         UserDefaults.standard.removeObject(forKey: Self.cloudStartupKey)
         cloudHeldBackAfterCrash = false
+        retryCloudUpdates()
     }
 
     /// Whether this device syncs through iCloud at all.
@@ -1065,20 +1100,12 @@ final class AppModel {
             UserDefaults.standard.set(iCloudSyncEnabled, forKey: "cloudSyncEnabled")
 
             if iCloudSyncEnabled {
-                // Turning it on is a resync, not a resume.
-                //
-                // This device's copy of the syncable state goes, and the engine
-                // starts with no change token so the container sends everything
-                // rather than what altered since a conversation it no longer
-                // remembers. Off and on again is therefore a deliberate "make
-                // this device agree with the others", which is the thing you
-                // want when two of them disagree and you cannot see why.
-                //
-                // The library stays: it is Plex's, and rebuilding it is a full
-                // re-fetch for no reason. Downloads stay for the same reason.
-                Task { await resyncFromCloud() }
+                // Resume and merge. Enabling sync never removes local edits.
+                Task { await resumeCloudSync() }
             } else {
+                let previous = cloud
                 cloud = nil
+                Task { await previous?.stop() }
                 cloudStatus = nil
                 cloudPoll?.cancel()
                 cloudPoll = nil
@@ -1086,85 +1113,74 @@ final class AppModel {
         }
     }
 
+    private var cloudStartupInProgress = false
+
     private func startCloudSync(database: AudiobookDatabase) async {
-        guard iCloudSyncEnabled else { return }
+        guard iCloudSyncEnabled, !cloudStartupInProgress else { return }
+        cloudStartupInProgress = true
+        defer { cloudStartupInProgress = false }
         guard !UserDefaults.standard.bool(forKey: "cloud.historyReset.pending") else {
             storageFailure = "Clearing iCloud history did not finish. Your local data is kept. Retry Clear listening history when connected."
             return
         }
-
-        // A crash-loop breaker, and the reason for it.
-        //
-        // Everything the sync layer applies came from somewhere else. If one
-        // record can make this process die — a trap rather than a thrown error —
-        // then every device holding that record dies at launch, on every launch,
-        // and the setting that would turn sync off is behind a screen the app
-        // never reaches. The data is shared, so the failure is shared, and there
-        // is no way in.
-        //
-        // So: a flag is written before the sync layer starts and cleared once it
-        // has. Finding it still set at launch means the last attempt did not
-        // finish, and this one skips sync entirely rather than repeating it.
-        //
-        // The app is fully usable without sync. This is the difference between a
-        // bad record costing somebody their listening state and costing them
-        // their app.
-        if UserDefaults.standard.bool(forKey: Self.cloudStartupKey) {
-            UserDefaults.standard.removeObject(forKey: Self.cloudStartupKey)
-            cloudHeldBackAfterCrash = true
-            return
-        }
-        UserDefaults.standard.set(true, forKey: Self.cloudStartupKey)
 
         let driver = CloudSyncDriver(
             store: CloudSyncStore(database: database),
             containerIdentifier: "iCloud.se.kladhest.vocalisbook"
         )
 
-        guard await driver.isAvailable() else {
-            // Not signed in, or restricted. Asked rather than assumed, and
-            // silent because the app is fully usable without it.
-            return
-        }
+        let outcome = await CloudStartupGate.run(
+            defaults: .standard, key: Self.cloudStartupKey,
+            isAvailable: {
+                guard self.iCloudSyncEnabled else { return false }
+                let available = await driver.isAvailable()
+                return available && self.iCloudSyncEnabled
+            },
+            start: {
+                // JSON, not `NSKeyedArchiver`.
+                //
+                // `CKSyncEngine.State.Serialization` is a Swift value type conforming to
+                // `Codable`. The keyed archiver wants an `NSObject` that conforms to
+                // `NSCoding`, which this is neither — it is the reflex for "persist an
+                // Apple type" and the wrong one here.
+                await driver.setOnStateChanged { state in
+                    guard let state, let data = try? JSONEncoder().encode(state) else {
+                        UserDefaults.standard.removeObject(forKey: Self.cloudStateKey)
+                        return
+                    }
+                    UserDefaults.standard.set(data, forKey: Self.cloudStateKey)
+                }
 
-        // JSON, not `NSKeyedArchiver`.
-        //
-        // `CKSyncEngine.State.Serialization` is a Swift value type conforming to
-        // `Codable`. The keyed archiver wants an `NSObject` that conforms to
-        // `NSCoding`, which this is neither — it is the reflex for "persist an
-        // Apple type" and the wrong one here.
-        await driver.setOnStateChanged { state in
-            guard let state, let data = try? JSONEncoder().encode(state) else {
-                UserDefaults.standard.removeObject(forKey: Self.cloudStateKey)
-                return
+                let restored: CKSyncEngine.State.Serialization? = {
+                    guard let data = UserDefaults.standard.data(forKey: Self.cloudStateKey) else {
+                        return nil
+                    }
+                    return try? JSONDecoder().decode(
+                        CKSyncEngine.State.Serialization.self, from: data
+                    )
+                }()
+
+                // Reload when something arrives, or a bookmark made on another device
+                // sits in the database until a screen happens to reload for its own
+                // reasons.
+                await driver.setOnApplied { [weak self] in
+                    Task { @MainActor in
+                        self?.cloudChanged()
+                    }
+                }
+
+                guard self.iCloudSyncEnabled else { return }
+                await driver.start(stateSerialization: restored)
+
+                guard self.iCloudSyncEnabled else {
+                    await driver.stop()
+                    return
+                }
+                cloud = driver
+                startCloudPolling()
             }
-            UserDefaults.standard.set(data, forKey: Self.cloudStateKey)
-        }
-
-        let restored: CKSyncEngine.State.Serialization? = {
-            guard let data = UserDefaults.standard.data(forKey: Self.cloudStateKey) else {
-                return nil
-            }
-            return try? JSONDecoder().decode(
-                CKSyncEngine.State.Serialization.self, from: data
-            )
-        }()
-
-        // Reload when something arrives, or a bookmark made on another device
-        // sits in the database until a screen happens to reload for its own
-        // reasons.
-        await driver.setOnApplied { [weak self] in
-            Task { @MainActor in
-                self?.cloudChanged()
-            }
-        }
-
-        await driver.start(stateSerialization: restored)
-
-        // Started without dying, so the next launch may try again.
-        UserDefaults.standard.removeObject(forKey: Self.cloudStartupKey)
-        cloud = driver
-        startCloudPolling()
+        )
+        cloudHeldBackAfterCrash = outcome == .heldBack
     }
 
     /// Sends whatever is waiting, after a local change worth syncing.

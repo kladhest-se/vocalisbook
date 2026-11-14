@@ -138,13 +138,22 @@ public struct LibraryStore: Sendable {
         ).key
     }
 
+    private static func effectiveIdentity(for book: PlexBook, sectionID: String, db: Database) throws -> String {
+        if book.guid == nil,
+           let existing = try String.fetchOne(db, sql: "SELECT identity_key FROM book WHERE rating_key = ? AND library_section_id = ?", arguments: [book.ratingKey, sectionID]) {
+            return existing
+        }
+        return identityKey(for: book, sectionID: sectionID)
+    }
+
     /// The same rule as `replaceTags`, for a table with two values per row.
     private static func replaceSequences(
         _ db: Database,
         bookRatingKey: String,
-        values: [BookSequence]
+        values: [BookSequence],
+        authoritative: Bool = false
     ) throws {
-        guard !values.isEmpty else { return }
+        guard authoritative || !values.isEmpty else { return }
 
         try db.execute(
             sql: "DELETE FROM book_sequence WHERE book_rating_key = ?",
@@ -168,9 +177,10 @@ public struct LibraryStore: Sendable {
     private static func replaceContributors(
         _ db: Database,
         bookRatingKey: String,
-        values: [ContributorIdentity]
+        values: [ContributorIdentity],
+        authoritative: Bool = false
     ) throws {
-        guard !values.isEmpty else { return }
+        guard authoritative || !values.isEmpty else { return }
 
         try db.execute(
             sql: "DELETE FROM book_contributor WHERE book_rating_key = ?",
@@ -202,19 +212,23 @@ public struct LibraryStore: Sendable {
         _ db: Database,
         table: String,
         bookRatingKey: String,
-        values: [String]
+        values: [String],
+        authoritative: Bool = false
     ) throws {
-        guard !values.isEmpty else { return }
+        guard authoritative || !values.isEmpty else { return }
 
         try db.execute(
             sql: "DELETE FROM \(table) WHERE book_rating_key = ?",
             arguments: [bookRatingKey]
         )
-        for value in Set(values) {
-            try db.execute(
-                sql: "INSERT INTO \(table) (book_rating_key, name) VALUES (?, ?)",
-                arguments: [bookRatingKey, value]
-            )
+        var seen = Set<String>()
+        for (index, value) in values.enumerated() where seen.insert(value).inserted {
+            if table == "book_series" {
+                try db.execute(sql: "INSERT INTO book_series (book_rating_key, name, display_order) VALUES (?, ?, ?)",
+                               arguments: [bookRatingKey, value, index])
+            } else {
+                try db.execute(sql: "INSERT INTO \(table) (book_rating_key, name) VALUES (?, ?)", arguments: [bookRatingKey, value])
+            }
         }
     }
 
@@ -228,12 +242,18 @@ public struct LibraryStore: Sendable {
         let timeline = BookTimeline(
             bookRatingKey: book.ratingKey,
             tracks: tracks,
-            chapters: chapters
+            chapters: chapters,
+            serverIdentifier: sectionID.split(separator: ":").first.map(String.init),
+            expectedTrackCount: book.leafCount
         )
+        guard timeline.isComplete else { throw SyncError.metadataIncomplete(ratingKey: book.ratingKey) }
 
         try database.writer.write { db in
+            let identity = try Self.effectiveIdentity(for: book, sectionID: sectionID, db: db)
             try LocalBookState.prepare(bookKey: book.ratingKey,
-                identity: Self.identityKey(for: book, sectionID: sectionID), sectionID: sectionID, db: db)
+                identity: identity, sectionID: sectionID, db: db)
+            let previous = try BookRecord.fetchOne(db, key: book.ratingKey)
+            let projection = try MetadataV4Projection(book: book, previous: previous, db: db)
             let record = BookRecord(
                 ratingKey: book.ratingKey,
                 librarySectionID: sectionID,
@@ -252,16 +272,26 @@ public struct LibraryStore: Sendable {
                 addedAt: book.addedAt,
                 plexUpdatedAt: book.updatedAt,
                 cachedAt: now,
-                language: book.language,
-                edition: book.edition,
-                identityKey: Self.identityKey(for: book, sectionID: sectionID),
-                workIdentity: book.workIdentity?.key,
-                workPublishedYear: book.workPublishedYear,
+                language: projection.language,
+                edition: projection.edition,
+                identityKey: identity,
+                workIdentity: projection.work,
+                workPublishedYear: projection.workPublication,
                 productionType: book.productionType,
                 ratingSource: book.ratingSource,
-                ratingCount: book.ratingCount
+                ratingCount: book.ratingCount,
+                recordingReleaseDate: projection.recordingDate,
+                publisher: book.studio,
+                rating: book.rating,
+                detailNeedsRefresh: false,
+                v4Payload: projection.payload,
+                v4Available: projection.available,
+                v4Mismatches: projection.mismatches.sorted().joined(separator: ","),
+                metadataRevision: projection.packet?.metadataRevision ?? previous?.metadataRevision,
+                artworkRevision: projection.packet != nil ? projection.packet?.artworkRevision : previous?.artworkRevision
             )
             try record.save(db)
+            try db.execute(sql: "UPDATE book SET timeline_complete = 1 WHERE rating_key = ?", arguments: [book.ratingKey])
 
             // Replaced rather than added to.
             //
@@ -270,27 +300,26 @@ public struct LibraryStore: Sendable {
             // refresh. Deleting first also means a genre removed on the server
             // disappears here, which an upsert alone would never notice.
             //
-            // Only when the response carried tags: the list endpoint omits them
-            // and the detail endpoint includes them, so an empty array usually
-            // means "not asked" rather than "none", and treating the two alike
-            // would empty the table on every library refresh.
+            // This is an authoritative detail response: an empty namespace
+            // clears old relationships. Partial library lists use the helpers'
+            // default preservation mode instead.
             try Self.replaceTags(db, table: "book_genre",
-                                 bookRatingKey: book.ratingKey, values: book.genres)
+                                 bookRatingKey: book.ratingKey, values: book.genres, authoritative: true)
             try Self.replaceTags(db, table: "book_narrator",
-                                 bookRatingKey: book.ratingKey, values: book.narrators)
+                                 bookRatingKey: book.ratingKey, values: projection.narrators, authoritative: true)
             try Self.replaceTags(db, table: "book_author",
-                                 bookRatingKey: book.ratingKey, values: book.authors)
+                                 bookRatingKey: book.ratingKey, values: projection.authors, authoritative: true)
             try Self.replaceTags(db, table: "book_series",
-                                 bookRatingKey: book.ratingKey, values: book.series)
-            try Self.replaceSequences(db, bookRatingKey: book.ratingKey, values: book.sequences)
-            try Self.replaceContributors(db, bookRatingKey: book.ratingKey, values: book.contributors)
+                                 bookRatingKey: book.ratingKey, values: projection.series, authoritative: true)
+            try Self.replaceSequences(db, bookRatingKey: book.ratingKey, values: projection.sequences, authoritative: true)
+            try Self.replaceContributors(db, bookRatingKey: book.ratingKey, values: projection.contributors, authoritative: true)
             try Self.claimHeldProgress(
                 db,
                 bookRatingKey: book.ratingKey,
-                identityKey: Self.identityKey(for: book, sectionID: sectionID)
+                identityKey: identity
             )
             try CloudSyncStore(database: database).claimHeldRecords(
-                identity: Self.identityKey(for: book, sectionID: sectionID),
+                identity: identity,
                 fallbackIdentity: "plex:\(sectionID.split(separator: ":").first.map(String.init) ?? sectionID):\(book.ratingKey)",
                 db: db
             )
@@ -379,8 +408,9 @@ public struct LibraryStore: Sendable {
     ) throws {
         try database.writer.write { db in
             for book in books {
+                let identity = try Self.effectiveIdentity(for: book, sectionID: sectionID, db: db)
                 try LocalBookState.prepare(bookKey: book.ratingKey,
-                    identity: Self.identityKey(for: book, sectionID: sectionID), sectionID: sectionID, db: db)
+                    identity: identity, sectionID: sectionID, db: db)
                 let existing = try BookRecord.fetchOne(db, key: book.ratingKey)
                 let record = BookRecord(
                     ratingKey: book.ratingKey,
@@ -398,14 +428,25 @@ public struct LibraryStore: Sendable {
                     addedAt: book.addedAt,
                     plexUpdatedAt: book.updatedAt,
                     cachedAt: now,
-                    language: book.language,
-                    edition: book.edition,
-                    identityKey: Self.identityKey(for: book, sectionID: sectionID),
-                    workIdentity: book.workIdentity?.key,
-                    workPublishedYear: book.workPublishedYear,
-                    productionType: book.productionType,
-                    ratingSource: book.ratingSource,
-                    ratingCount: book.ratingCount
+                    language: book.language ?? existing?.language,
+                    edition: book.edition ?? existing?.edition,
+                    identityKey: identity,
+                    workIdentity: book.workIdentity?.key ?? existing?.workIdentity,
+                    workPublishedYear: book.workPublishedYear ?? existing?.workPublishedYear,
+                    productionType: book.productionType ?? existing?.productionType,
+                    ratingSource: book.ratingSource ?? existing?.ratingSource,
+                    ratingCount: book.ratingSource != nil && book.ratingSource != existing?.ratingSource ? book.ratingCount : (book.ratingCount ?? existing?.ratingCount),
+                    recordingReleaseDate: book.recordingReleaseDate ?? existing?.recordingReleaseDate,
+                    publisher: book.studio ?? existing?.publisher,
+                    rating: book.ratingSource != nil && book.ratingSource != existing?.ratingSource ? book.rating : (book.rating ?? existing?.rating),
+                    detailNeedsRefresh: (existing?.detailNeedsRefresh ?? true) || existing?.plexUpdatedAt != book.updatedAt
+                        || (book.metadataV4 != nil && book.metadataV4?.payloadData != existing?.v4Payload)
+                        || (book.metadataV4Present && book.metadataV4 == nil),
+                    v4Payload: existing?.v4Payload,
+                    v4Available: existing?.v4Available ?? false,
+                    v4Mismatches: existing?.v4Mismatches ?? "",
+                    metadataRevision: existing?.metadataRevision,
+                    artworkRevision: existing?.artworkRevision
                 )
                 try record.save(db)
 
@@ -432,14 +473,77 @@ public struct LibraryStore: Sendable {
                 try Self.claimHeldProgress(
                     db,
                     bookRatingKey: book.ratingKey,
-                    identityKey: Self.identityKey(for: book, sectionID: sectionID)
+                    identityKey: identity
                 )
                 try CloudSyncStore(database: database).claimHeldRecords(
-                    identity: Self.identityKey(for: book, sectionID: sectionID),
+                    identity: identity,
                     fallbackIdentity: "plex:\(sectionID.split(separator: ":").first.map(String.init) ?? sectionID):\(book.ratingKey)",
                     db: db
                 )
             }
+        }
+    }
+
+    public func metadataInfo(bookRatingKey: String) throws -> BookMetadataInfo {
+        try database.writer.read { db in
+            guard let book = try BookRecord.fetchOne(db, key: bookRatingKey) else {
+                return BookMetadataInfo(packet: nil, available: false, mismatches: [], needsRefresh: false)
+            }
+            let packet = book.v4Payload.flatMap { try? VocalisMetaV4.decodePayload($0,
+                recordingKey: book.identityKey?.hasPrefix("spokenmeta:") == true ? book.identityKey : nil) }
+            return BookMetadataInfo(packet: packet, available: book.v4Available,
+                mismatches: Set(book.v4Mismatches.split(separator: ",").map(String.init)), needsRefresh: book.detailNeedsRefresh)
+        }
+    }
+
+    /// One batch lookup feeds the observable cover-version map. No database
+    /// reads are needed for individual tiles while scrolling.
+    public func artworkVersions() throws -> [String: String] {
+        try database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT book.*, library_section.server_id AS artwork_server FROM book
+                JOIN library_section ON library_section.id = book.library_section_id
+                WHERE thumb IS NOT NULL ORDER BY cached_at ASC
+                """)
+            var versions: [String: String] = [:]
+            for row in rows {
+                let book = try BookRecord(row: row)
+                let server: String = row["artwork_server"]
+                versions[server + "\0" + (book.thumb ?? "")] = book.artworkCacheVersion
+            }
+            return versions
+        }
+    }
+
+    public func serverIdentifier(bookRatingKey: String) throws -> String? {
+        try database.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT library_section.server_id FROM book JOIN library_section ON library_section.id = book.library_section_id WHERE book.rating_key = ?", arguments: [bookRatingKey])
+        }
+    }
+
+    func serializeRefresh<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await database.libraryRefreshes.run(operation)
+    }
+
+    /// Reconcile only a completed full scan. User rows are detached by identity;
+    /// books with any download rows are retained as local copies for management
+    /// and offline playback. No audio files or download records are removed.
+    @discardableResult
+    public func reconcileFullScan(sectionID: String, seen: Set<String>, startedAt: Date) throws -> Int {
+        try database.writer.write { db in
+            let books = try BookRecord.filter(Column("library_section_id") == sectionID).fetchAll(db)
+            var removed = 0
+            for book in books where !seen.contains(book.ratingKey) && book.cachedAt <= startedAt {
+                let hasDownloads = try DownloadRecord.filter(Column("book_rating_key") == book.ratingKey).fetchCount(db) > 0
+                if hasDownloads {
+                    try db.execute(sql: "UPDATE book SET detail_needs_refresh = 0 WHERE rating_key = ?", arguments: [book.ratingKey])
+                    continue
+                }
+                try LocalBookState.detach(bookKey: book.ratingKey, db: db)
+                try book.delete(db)
+                removed += 1
+            }
+            return removed
         }
     }
 
@@ -996,9 +1100,11 @@ public struct LibraryStore: Sendable {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                    SELECT series, position FROM book_sequence
-                    WHERE book_rating_key = ?
-                    ORDER BY series COLLATE NOCASE ASC
+                    SELECT book_sequence.series AS series, book_sequence.position AS position FROM book_sequence
+                    LEFT JOIN book_series ON book_series.book_rating_key = book_sequence.book_rating_key
+                        AND book_series.name = book_sequence.series
+                    WHERE book_sequence.book_rating_key = ?
+                    ORDER BY COALESCE(book_series.display_order, 2147483647), book_sequence.series COLLATE NOCASE ASC
                     LIMIT 1
                     """,
                 arguments: [ratingKey]
@@ -1009,8 +1115,8 @@ public struct LibraryStore: Sendable {
 
             let held = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM book_series WHERE name = ?",
-                arguments: [series]
+                sql: "SELECT COUNT(*) FROM book_series JOIN book ON book.rating_key = book_series.book_rating_key WHERE book_series.name = ? AND book.library_section_id = (SELECT library_section_id FROM book WHERE rating_key = ?)",
+                arguments: [series, ratingKey]
             ) ?? 0
 
             guard held > 1 else { return nil }
@@ -1066,7 +1172,7 @@ public struct LibraryStore: Sendable {
             for candidate in candidates {
                 let cached = try Row.fetchOne(
                     db,
-                    sql: "SELECT plex_updated_at FROM book WHERE rating_key = ?",
+                    sql: "SELECT plex_updated_at, timeline_complete, detail_needs_refresh FROM book WHERE rating_key = ?",
                     arguments: [candidate.ratingKey]
                 )
                 guard let cached else {
@@ -1081,11 +1187,28 @@ public struct LibraryStore: Sendable {
                     arguments: [candidate.ratingKey]
                 ) ?? 0
                 let cachedUpdatedAt: Date? = cached["plex_updated_at"]
-                if hasTracks == 0 || cachedUpdatedAt != candidate.updatedAt {
+                if hasTracks == 0 || (cached["detail_needs_refresh"] as Bool? ?? true) || !(cached["timeline_complete"] as Bool? ?? false) || cachedUpdatedAt != candidate.updatedAt {
                     needsRefresh.append(candidate.ratingKey)
                 }
             }
             return needsRefresh
+        }
+    }
+
+    /// A persisted backlog survives list timestamps and the per-sync cap.
+    /// Failed attempts rotate behind untried books instead of starving them.
+    public func booksAwaitingDetail(sectionID: String, limit: Int = 50) throws -> [String] {
+        try database.writer.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT rating_key FROM book WHERE library_section_id = ? AND detail_needs_refresh = 1
+                ORDER BY last_detail_attempt_at ASC, rating_key ASC LIMIT ?
+                """, arguments: [sectionID, limit])
+        }
+    }
+
+    public func noteDetailAttempt(ratingKey: String, at date: Date = Date()) throws {
+        try database.writer.write { db in
+            try db.execute(sql: "UPDATE book SET last_detail_attempt_at = ? WHERE rating_key = ?", arguments: [date, ratingKey])
         }
     }
 
@@ -1099,7 +1222,7 @@ public struct LibraryStore: Sendable {
             func names(_ table: String) throws -> [String] {
                 try String.fetchAll(
                     db,
-                    sql: "SELECT name FROM \(table) WHERE book_rating_key = ? ORDER BY name COLLATE NOCASE",
+                    sql: "SELECT name FROM \(table) WHERE book_rating_key = ? ORDER BY \(table == "book_series" ? "display_order, " : "")name COLLATE NOCASE",
                     arguments: [bookRatingKey]
                 )
             }
@@ -1108,7 +1231,7 @@ public struct LibraryStore: Sendable {
                 db,
                 sql: """
                     SELECT language, edition, work_identity, work_published_year,
-                           production_type, rating_source, rating_count
+                           production_type, rating_source, rating_count, recording_release_date, publisher, rating
                     FROM book WHERE rating_key = ?
                     """,
                 arguments: [bookRatingKey]
@@ -1135,7 +1258,14 @@ public struct LibraryStore: Sendable {
                 productionType: book?["production_type"],
                 ratingSource: book?["rating_source"],
                 ratingCount: book?["rating_count"],
-                contributors: contributors
+                contributors: contributors,
+                recordingReleaseDate: book?["recording_release_date"],
+                publisher: book?["publisher"],
+                rating: book?["rating"],
+                recordingDateKind: try BookRecord.fetchOne(db, key: bookRatingKey).flatMap { record in
+                    guard record.v4Available, !record.v4Mismatches.split(separator: ",").contains("recording_date"), let data = record.v4Payload else { return nil }
+                    return try? VocalisMetaV4.decodePayload(data, recordingKey: record.identityKey?.hasPrefix("spokenmeta:") == true ? record.identityKey : nil).fields["recording_date"]?.provenance.dateKind
+                }
             )
         }
     }
@@ -1146,6 +1276,7 @@ public struct LibraryStore: Sendable {
     /// tracks, so callers cannot mistake "not fetched yet" for "zero length".
     public func timeline(bookRatingKey: String) throws -> CachedTimeline? {
         try database.writer.read { db in
+            guard try Bool.fetchOne(db, sql: "SELECT timeline_complete FROM book WHERE rating_key = ?", arguments: [bookRatingKey]) == true else { return nil }
             let tracks = try TrackRecord
                 .filter(Column("book_rating_key") == bookRatingKey)
                 .order(Column("idx").asc)
@@ -1157,7 +1288,7 @@ public struct LibraryStore: Sendable {
                 .order(Column("idx").asc)
                 .fetchAll(db)
 
-            return CachedTimeline(
+            let result = CachedTimeline(
                 bookRatingKey: bookRatingKey,
                 segments: tracks.map {
                     BookTimeline.Segment(
@@ -1183,6 +1314,7 @@ public struct LibraryStore: Sendable {
                     }
                 }
             )
+            return result.isConsistent ? result : nil
         }
     }
 
@@ -1676,17 +1808,18 @@ public struct LibraryStore: Sendable {
     /// does not parse simply cannot be "next", which is the honest answer.
     ///
     /// A book can be in several series. The first with a successor wins, ordered
-    /// by series name so the answer does not change between runs — the same
-    /// arbitrary-but-stable rule the collection path uses, for the same reason:
-    /// nothing says which series is *the* series.
+    /// by the agent's primary-series order, retaining exact secondary memberships
+    /// as fallbacks when the primary series has no indexed successor.
     private func nextFromSequenceTags(after ratingKey: String) throws -> NextInSeries? {
         try database.writer.read { db in
             let current = try Row.fetchAll(
                 db,
                 sql: """
-                    SELECT series, position FROM book_sequence
-                    WHERE book_rating_key = ?
-                    ORDER BY series COLLATE NOCASE ASC
+                    SELECT book_sequence.series AS series, book_sequence.position AS position FROM book_sequence
+                    LEFT JOIN book_series ON book_series.book_rating_key = book_sequence.book_rating_key
+                        AND book_series.name = book_sequence.series
+                    WHERE book_sequence.book_rating_key = ?
+                    ORDER BY COALESCE(book_series.display_order, 2147483647), book_sequence.series COLLATE NOCASE ASC
                     """,
                 arguments: [ratingKey]
             )
@@ -1985,9 +2118,11 @@ public struct CachedTimeline: Sendable, Hashable {
     /// Verifies the denormalised offsets are still self-consistent. Cheap
     /// enough to assert on load in debug builds.
     public var isConsistent: Bool {
+        guard !segments.isEmpty else { return false }
         var expected = 0
         for segment in segments {
-            if segment.startMs != expected { return false }
+            guard segment.startMs == expected, segment.durationMs > 0,
+                  !segment.partKey.isEmpty, segment.durationMs <= Int.max - expected else { return false }
             expected += segment.durationMs
         }
         return true
@@ -2145,6 +2280,27 @@ public struct BookCredits: Sendable, Hashable {
 
     /// Every contributor the agent matched to a stable source.
     public var contributors: [ContributorRecord]
+    public var recordingDateKind: String?
+    public var recordingReleaseDate: String?
+    public var publisher: String?
+    public var rating: Double?
+
+    public var recordingLine: String? {
+        var parts: [String] = []
+        if let recordingReleaseDate {
+            let label: String
+            switch recordingDateKind {
+            case "recording_release", "user_supplied_recording_date": label = "Recording released"
+            case "copyright_year_fallback": label = "Copyright date"
+            case "work_year_fallback": label = "Work date"
+            case "book_edition_date_fallback": label = "Book edition date"
+            default: label = "Date"
+            }
+            parts.append("\(label) \(recordingReleaseDate)")
+        }
+        if let publisher, !publisher.isEmpty { parts.append(publisher) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 
     public var isEmpty: Bool {
         authors.isEmpty && narrators.isEmpty && series.isEmpty
@@ -2171,6 +2327,7 @@ public struct BookCredits: Sendable, Hashable {
         var parts: [String] = []
         if let productionType { parts.append(productionType) }
         if let ratingSource {
+            if let rating { parts.append(String(format: "%.1f/5", rating / 2)) }
             if let ratingCount {
                 parts.append("\(ratingSource) · \(ratingCount) ratings")
             } else {
@@ -2191,7 +2348,11 @@ public struct BookCredits: Sendable, Hashable {
         productionType: String? = nil,
         ratingSource: String? = nil,
         ratingCount: Int? = nil,
-        contributors: [ContributorRecord] = []
+        contributors: [ContributorRecord] = [],
+        recordingReleaseDate: String? = nil,
+        publisher: String? = nil,
+        rating: Double? = nil,
+        recordingDateKind: String? = nil
     ) {
         self.authors = authors
         self.narrators = narrators
@@ -2204,6 +2365,10 @@ public struct BookCredits: Sendable, Hashable {
         self.ratingSource = ratingSource
         self.ratingCount = ratingCount
         self.contributors = contributors
+        self.recordingReleaseDate = recordingReleaseDate
+        self.publisher = publisher
+        self.rating = rating
+        self.recordingDateKind = recordingDateKind
     }
 }
 

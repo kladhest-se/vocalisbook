@@ -311,3 +311,5 @@ its own rights and terms.
 ## Repository releases
 
 The adapted ZIFburn/BitSkim tooling pushes source and publishes annotated tags, release notes and verified source/website archives to GitLab and GitHub. Start with `make release-plan`; see [the release guide](Docs/RELEASING.md) for external project settings, credentials, initialization, preparation and explicit publication. `make release` builds/packages only. Signed App Store archives remain the existing per-platform commands.
+
+Listening-data export/import, checkpoint recovery and sync status are described in [the backup and reliability guide](Docs/followup-improvements.md). See [VocalisMeta integration](Docs/vocalismeta-integration.md) for recording metadata, exact series relationships and automatic detail refresh. The [VocalisMeta v4 guide](Docs/vocalismeta-v4.md) covers field sources, versioned covers and reviewed recording upgrades.

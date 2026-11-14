@@ -17,11 +17,13 @@ let package = Package(
             name: "PlexKit",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
-            ]
+            ],
+            linkerSettings: [.linkedLibrary("z")]
         ),
         .testTarget(
             name: "PlexKitTests",
             dependencies: ["PlexKit"],
+            resources: [.copy("Fixtures")],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]

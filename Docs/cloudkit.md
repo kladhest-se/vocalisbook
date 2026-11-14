@@ -50,3 +50,10 @@ Use Settings' Sent/Received counters and error text, plus Console categories `cl
 Migration v14 adds a local installation identifier and `origin_device_id` on listening sessions. Outgoing session records carry `originDeviceID`; importing a legacy session assigns remote ownership rather than guessing that it belongs to this device. End-session updates require the active session ID and this installation's owner ID.
 
 Clearing cloud history cancels the old engine, ignores its late callbacks, awaits private-zone deletion and recreation, and only then clears local listening data. Missing-zone errors on delete are accepted so a partially completed reset can be retried. Other failures propagate to the app; the pending-reset flag holds automatic sync/resync until a successful user retry. Zone deletion on one device does not guarantee that an offline second device will never republish retained records.
+
+
+## Enabling sync and account availability
+
+Turning sync on now resumes/merges without clearing local listening rows. Pending local changes remain available to upload; incoming records use the existing timestamp/revision conflict rules. Destructive recovery is reserved for the explicitly confirmed data-clearing actions. Turning sync off cancels the previous driver's operations rather than relying on object lifetime.
+
+The startup marker is cleared on normal completion, account unavailability and cancellation. A process interrupted during startup still leaves the marker for the next launch's crash-loop safeguard. Concurrent startup attempts within one app instance are suppressed so they cannot mistake a live attempt for an earlier crash.

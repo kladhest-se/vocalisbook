@@ -147,6 +147,7 @@ struct MetadataDiagnosticsView: View {
             row("Identity contract (v1)", canonicalIdentity.isStrong ? "Available" : "Unavailable")
             row("Work contract (v2)", hasWorkContract(book) ? "Available" : "Unavailable")
             row("Extended contract (v3)", hasExtendedContract(book) ? "Available" : "Unavailable")
+            row("Refresh and provenance (v4)", book.metadataV4 != nil ? "Validated" : (book.metadataV4Present ? "Invalid or incomplete" : "Not present"))
         }
     }
 

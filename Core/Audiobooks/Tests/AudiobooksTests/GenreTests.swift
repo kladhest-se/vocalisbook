@@ -151,7 +151,8 @@ struct GenreTests {
     func noTagsDoesNotEmptyTheTable() throws {
         let store = try makeStore()
         try cache(store, key: "900", title: "Guards! Guards!", genres: ["Fantasy"])
-        try cache(store, key: "900", title: "Guards! Guards!", genres: [])
+        let listing = try JSONDecoder().decode(PlexBook.self, from: Data(#"{"ratingKey":"900","title":"Guards! Guards!"}"#.utf8))
+        try store.cacheBookList([listing], sectionID: "srv:2")
 
         let genres = try store.genres(sectionID: "srv:2")
         #expect(genres.map(\.name) == ["Fantasy"])

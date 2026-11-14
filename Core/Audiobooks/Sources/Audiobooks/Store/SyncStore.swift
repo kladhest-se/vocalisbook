@@ -10,6 +10,10 @@ public struct SyncStore: Sendable {
         self.database = database
     }
 
+    func serializeUpload<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await database.plexUploads.run(operation)
+    }
+
     // MARK: - Position
 
     public func recordPosition(
@@ -186,55 +190,86 @@ public struct SyncStore: Sendable {
 
     /// Entries ready to send, oldest first, skipping ones in backoff.
     ///
+    /// Delays start at the last failed attempt, not the original offline edit.
     /// Backoff is exponential on `attempts` and capped: something that has
     /// failed eleven times is not going to succeed on the twelfth, and hammering
     /// a server that is refusing us is worse than waiting.
-    public func pendingOutbox(limit: Int = 50, now: Date = Date()) throws -> [OutboxEntry] {
+    public func pendingOutbox(limit: Int = 50, now: Date = Date(), serverIdentifier: String? = nil) throws -> [OutboxEntry] {
         try database.writer.read { db in
-            try OutboxRecord
+            var request = OutboxRecord.all()
+            if let serverIdentifier {
+                request = request.filter(sql: "book_rating_key IN (SELECT book.rating_key FROM book JOIN library_section ON library_section.id = book.library_section_id WHERE library_section.server_id = ?)", arguments: [serverIdentifier])
+            }
+            return try request
                 .order(Column("recorded_at").asc)
                 .fetchAll(db)
                 .filter { record in
                     guard record.attempts > 0 else { return true }
                     let delay = min(pow(2.0, Double(record.attempts)), 3600)
-                    return record.recordedAt.addingTimeInterval(delay) <= now
+                    return (record.lastAttemptAt ?? record.recordedAt).addingTimeInterval(delay) <= now
                 }
-                .prefix(limit)
+                .prefix(max(0, limit))
                 .compactMap(\.entry)
         }
     }
 
-    /// Called after a successful push. Clears the outbox row and records what
-    /// was synced, which is what lets reconnect tell a local change from a
-    /// value we merely read.
-    public func markSynced(
-        bookRatingKey: String,
-        kind: OutboxEntry.Kind,
-        absoluteMs: Int,
-        at now: Date = Date()
-    ) throws {
+    /// Acknowledges only the exact mutation sent. A newer coalesced edit must
+    /// remain queued, including edits that return to the same position.
+    public func markSynced(entry: OutboxEntry, at now: Date = Date()) throws {
         try database.writer.write { db in
-            try OutboxRecord
-                .filter(Column("book_rating_key") == bookRatingKey)
-                .filter(Column("kind") == kind.rawValue)
-                .deleteAll(db)
+            guard let record = try OutboxRecord.fetchOne(db, key: entry.id.uuidString),
+                  record.matches(entry) else { return }
+            try record.delete(db)
 
-            if var progress = try ProgressRecord.fetchOne(db, key: bookRatingKey) {
-                progress.syncedOffsetMs = absoluteMs
+            if var progress = try ProgressRecord.fetchOne(db, key: entry.bookRatingKey),
+               progress.revision == entry.revision,
+               progress.changedAt == entry.recordedAt,
+               progress.absoluteMs == entry.absoluteMs {
+                progress.syncedOffsetMs = entry.absoluteMs
                 progress.syncedAt = now
-                // Only clean if nothing changed while the push was in flight.
-                progress.dirty = progress.absoluteMs != absoluteMs
+                progress.dirty = false
                 try progress.save(db)
             }
         }
     }
 
-    public func markFailed(entry: OutboxEntry, error: String) throws {
+    public func markFailed(entry: OutboxEntry, error: String, at now: Date = Date()) throws {
         try database.writer.write { db in
-            guard var record = try OutboxRecord.fetchOne(db, key: entry.id.uuidString) else { return }
+            guard var record = try OutboxRecord.fetchOne(db, key: entry.id.uuidString),
+                  record.matches(entry) else { return }
             record.attempts += 1
             record.lastError = error
+            record.lastAttemptAt = max(record.lastAttemptAt ?? now, now)
             try record.save(db)
+        }
+    }
+
+    public struct QueueStatus: Sendable, Equatable {
+        public var pending: Int
+        public var failed: Int
+        public var lastSuccess: Date?
+        public var nextRetry: Date?
+        public var lastError: String?
+    }
+
+    public func queueStatus(now: Date = Date()) throws -> QueueStatus {
+        try database.writer.read { db in
+            let rows = try OutboxRecord.fetchAll(db)
+            let failures = rows.filter { $0.attempts > 0 }
+            let retry = failures.map {
+                ($0.lastAttemptAt ?? $0.recordedAt).addingTimeInterval(min(pow(2, Double($0.attempts)), 3600))
+            }.filter { $0 > now }.min()
+            let latest = failures.max { ($0.lastAttemptAt ?? $0.recordedAt) < ($1.lastAttemptAt ?? $1.recordedAt) }
+            return QueueStatus(pending: rows.count, failed: failures.count,
+                lastSuccess: try Date.fetchOne(db, sql: "SELECT MAX(synced_at) FROM progress"),
+                nextRetry: retry, lastError: latest?.lastError)
+        }
+    }
+
+    /// An explicit retry bypasses delays without discarding queued payloads.
+    public func retryFailedOutbox() throws {
+        try database.writer.write { db in
+            try db.execute(sql: "UPDATE outbox SET attempts = 0, last_error = NULL, last_attempt_at = NULL WHERE attempts > 0")
         }
     }
 

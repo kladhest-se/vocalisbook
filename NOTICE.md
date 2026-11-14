@@ -9,3 +9,5 @@ GRDB.swift is an external Swift package under the MIT license. Its license is re
 VocalisBook is independent of Plex Inc. Plex is a trademark of Plex Inc.; the application is not affiliated with, endorsed by or associated with Plex Inc.
 
 Release tooling is adapted from the MIT-licensed ZIFburn release tools and BitSkim helpers. Their original copyright and permission notices are retained in `scripts/LICENSE-ZIFburn-release-tools` and `scripts/LICENSE-BitSkim`; preserve both with distributions. VocalisBook adaptations are covered by the project license.
+
+The VocalisMeta client-contract test fixtures are copied from kladhest-se/vocalismeta at revision 0a39e45, under the MIT License. Their copyright and license are retained in Core/PlexKit/Tests/PlexKitTests/Fixtures/VocalisMeta/LICENSE-VocalisMeta.

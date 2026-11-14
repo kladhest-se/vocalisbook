@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Covers, kept on disk.
 ///
@@ -54,47 +55,12 @@ public actor ArtworkCache {
         return try Self.directory()
     }
 
-    /// A filename for a cover, with no credential in it.
-    ///
-    /// **The URL cannot be the key.** A Plex artwork URL carries
-    /// `X-Plex-Token` in its query string, so hashing or sanitising the whole
-    /// thing writes the account token into a filename — on disk, in a directory
-    /// that outlives the session, readable by anything that can read the
-    /// container. It would also break the cache the moment the token rotated,
-    /// since every key would change at once.
-    ///
-    /// The thumb path and the requested size are the whole identity of a cover.
-    /// Nothing else about the URL matters.
-    public nonisolated static func key(thumb: String, width: Int, height: Int) -> String {
-        let safe = thumb.unicodeScalars.map { scalar -> String in
-            switch scalar {
-            case "a"..."z", "A"..."Z", "0"..."9", ".", "-", "_":
-                String(scalar)
-            default:
-                "_"
-            }
-        }.joined()
-
-        // Long thumb paths would exceed the filename limit, so anything past a
-        // sensible length is replaced by a hash of the whole thing — which keeps
-        // the key unique without keeping it readable.
-        let trimmed = safe.count <= 96 ? safe : String(safe.suffix(64)) + "-" + String(fnv1a(safe), radix: 36)
-        return "\(trimmed)-\(width)x\(height)"
-    }
-
-    /// A small deterministic hash, written out rather than imported.
-    ///
-    /// CryptoKit would do, but this needs to survive relaunches and be identical
-    /// on every platform, and `hashValue` is neither — Swift seeds it per
-    /// process, so a cache keyed on it would miss on every launch and grow
-    /// forever.
-    private nonisolated static func fnv1a(_ text: String) -> UInt64 {
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in text.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
-        }
-        return hash
+    /// Server-scoped, filename-safe identity. Original paths are hashed before
+    /// sanitization, so punctuation cannot create collisions. Credentials and
+    /// changing connection URLs never participate in either cache's identity.
+    public nonisolated static func key(serverIdentifier: String, thumb: String, width: Int, height: Int, revision: String? = nil) -> String {
+        let identity = "\(serverIdentifier)\0\(thumb)\0\(width)x\(height)\0\(revision ?? "")"
+        return "s-" + SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     public nonisolated static func directory() throws -> URL {
@@ -133,11 +99,13 @@ public actor ArtworkCache {
     /// the bookkeeping that has to be shared.
     public nonisolated func data(
         forThumb thumb: String,
+        serverIdentifier: String,
         width: Int,
         height: Int,
-        url: URL?
+        url: URL?,
+        revision: String? = nil
     ) async -> Data? {
-        let key = Self.key(thumb: thumb, width: width, height: height)
+        let key = Self.key(serverIdentifier: serverIdentifier, thumb: thumb, width: width, height: height, revision: revision)
 
         if let cached = try? cachedData(key: key) { return cached }
         guard let url else { return nil }

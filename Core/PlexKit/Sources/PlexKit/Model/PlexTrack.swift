@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// A Plex track (`type=10`) — one audio file inside a book.
 ///
@@ -131,6 +132,12 @@ public struct PlexPart: Decodable, Sendable, Hashable, Identifiable {
     /// The prefix letter matters. Without it a part with `updatedAt` of 1700 and
     /// another with a size of 1700 bytes would collide — different files, one
     /// cache entry.
+    /// Filename-safe cache identity bound to the serving Plex installation.
+    public func cacheKey(serverIdentifier: String) -> String {
+        let input = "\(serverIdentifier.utf8.count):\(serverIdentifier)\(cacheKey)"
+        return "s-" + SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     public var cacheKey: String {
         if let updatedAt {
             return "\(id)-u\(Int(updatedAt.timeIntervalSince1970))"

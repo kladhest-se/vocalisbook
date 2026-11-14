@@ -20,6 +20,12 @@ public struct SessionStore: Sendable {
         self.database = database
     }
 
+    /// Called once at process startup, before playback begins. Querying through
+    /// a newly constructed SessionStore never implicitly ends an active session.
+    public func recoverInterruptedSessions() throws {
+        try database.writer.write { db in try Self.closeOpenSessions(db) }
+    }
+
     /// Opens a session, closing any that was left open.
     ///
     /// One is left open whenever the app is killed mid-playback, which happens
@@ -46,16 +52,31 @@ public struct SessionStore: Sendable {
                 sql: """
                     INSERT INTO listening_session
                         (id, book_rating_key, started_at, ended_at, start_ms, end_ms, rate,
-                         revision, dirty, library_section_id, origin_device_id)
+                         revision, dirty, library_section_id, origin_device_id, last_listened_at, last_listened_ms)
                     VALUES (?, ?, ?, NULL, ?, NULL, ?, 1, 1, ?,
-                            (SELECT identifier FROM local_device WHERE singleton = 1))
+                            (SELECT identifier FROM local_device WHERE singleton = 1), ?, ?)
                     """,
-                arguments: [id, bookRatingKey, now, atMs, Double(rate), sectionID]
+                arguments: [id, bookRatingKey, now, atMs, Double(rate), sectionID, now, atMs]
             )
 
         }
         activeSession.set(id)
         return id
+    }
+
+    /// Save confirmed playback periodically; a future process recovers only up
+    /// to this checkpoint, never through time spent outside the application.
+    public func checkpoint(atMs: Int, now: Date = Date()) throws {
+        guard let id = activeSession.value else { return }
+        try database.writer.write { db in
+            try db.execute(sql: """
+                UPDATE listening_session
+                SET last_listened_at = ?, last_listened_ms = ?, revision = revision + 1, dirty = 1
+                WHERE id = ? AND ended_at IS NULL AND started_at <= ?
+                  AND (last_listened_at IS NULL OR last_listened_at < ?)
+                  AND origin_device_id = (SELECT identifier FROM local_device WHERE singleton = 1)
+                """, arguments: [now, atMs, id, now, now])
+        }
     }
 
     /// Closes the open session at a position.
@@ -79,21 +100,36 @@ public struct SessionStore: Sendable {
 
     /// A session with no end is one the app never got to close.
     ///
-    /// Closed at its own start rather than at `now`: the app may have been gone
-    /// for days, and crediting all of that as listening would make the streak a
-    /// lie. Zero length is the honest answer when the length is unknown.
+    /// Closed at its last confirmed checkpoint, or its start for older rows.
+    /// Recovery never credits the time since the application disappeared.
     private static func closeOpenSessions(_ db: Database) throws {
         try db.execute(sql: """
             UPDATE listening_session
-            SET ended_at = started_at, end_ms = start_ms, revision = revision + 1, dirty = 1
+            SET ended_at = MAX(started_at, COALESCE(last_listened_at, started_at)),
+                end_ms = COALESCE(last_listened_ms, start_ms), revision = revision + 1, dirty = 1
             WHERE ended_at IS NULL
               AND origin_device_id = (SELECT identifier FROM local_device WHERE singleton = 1)
             """)
     }
 
+    /// Closed rows only: an abandoned open row cannot prove how long playback
+    /// lasted. Ignore invalid intervals and never credit future wall-clock time.
+    private static func closedInterval(start: Date, end: Date, now: Date) -> DateInterval? {
+        let end = min(end, now)
+        guard start.timeIntervalSinceReferenceDate.isFinite,
+              end.timeIntervalSinceReferenceDate.isFinite, start < end else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+
+    private static func milliseconds(from start: Date, to end: Date) -> Int {
+        Int((end.timeIntervalSince(start) * 1000).rounded())
+    }
+
     // MARK: - Statistics
 
-    /// Everything the history screen needs, in one pass over the table.
+    /// Everything the history screen needs, in one pass over closed sessions.
+    /// Elapsed time is split by the display calendar's days and capped at `now`;
+    /// speed and seeks do not change how much wall-clock time was listened.
     ///
     /// A personal library's worth of sessions is small enough to compute in
     /// Swift; doing the calendar arithmetic in SQL would mean trusting SQLite's
@@ -126,17 +162,30 @@ public struct SessionStore: Sendable {
             }
         }
 
-        // Wall-clock seconds, not position moved.
-        //
-        // At 1.5x an hour of listening advances ninety minutes of book, and
-        // "how long did I listen" means the hour.
-        var perDay: [Date: Int] = [:]
+        // Split elapsed listening at local calendar boundaries. Adding 86,400
+        // seconds is not a calendar day when daylight-saving time changes.
+        // Sum SQLite's millisecond precision before converting a day's total
+        // to whole seconds, so short pause/resume sessions are not all lost.
+        var intervals: [DateInterval] = []
         for row in rows {
-            let seconds = Int(row.end.timeIntervalSince(row.start))
-            guard seconds > 0 else { continue }
-            let day = calendar.startOfDay(for: row.start)
-            perDay[day, default: 0] += seconds
+            guard let interval = Self.closedInterval(start: row.start, end: row.end, now: now) else { continue }
+            if let last = intervals.last, interval.start <= last.end {
+                intervals[intervals.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
+            } else { intervals.append(interval) }
         }
+        // Simultaneous recordings on multiple devices describe one elapsed
+        // period. Union them before splitting into calendar-day contributions.
+        var millisecondsPerDay: [Date: Int] = [:]
+        for interval in intervals {
+            var cursor = interval.start
+            while cursor < interval.end,
+                  let day = calendar.dateInterval(of: .day, for: cursor), day.end > cursor {
+                let end = min(interval.end, day.end)
+                millisecondsPerDay[day.start, default: 0] += Self.milliseconds(from: cursor, to: end)
+                cursor = end
+            }
+        }
+        let perDay = millisecondsPerDay.mapValues { $0 / 1000 }.filter { $0.value > 0 }
 
         let today = calendar.startOfDay(for: now)
         let listened = Set(perDay.keys)
@@ -147,17 +196,19 @@ public struct SessionStore: Sendable {
         var current = 0
         var cursor = listened.contains(today)
             ? today
-            : calendar.date(byAdding: .day, value: -1, to: today)!
+            : calendar.startOfDay(for: calendar.date(byAdding: .day, value: -1, to: today)!)
         while listened.contains(cursor) {
             current += 1
-            cursor = calendar.date(byAdding: .day, value: -1, to: cursor)!
+            cursor = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -1, to: cursor)!)
         }
 
         var longest = 0
         var run = 0
         var previous: Date?
         for day in listened.sorted() {
-            if let previous, calendar.date(byAdding: .day, value: 1, to: previous) == day {
+            if let previous,
+               let next = calendar.date(byAdding: .day, value: 1, to: previous),
+               calendar.startOfDay(for: next) == day {
                 run += 1
             } else {
                 run = 1
@@ -166,15 +217,19 @@ public struct SessionStore: Sendable {
             previous = day
         }
 
-        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? today
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)
+        let weekStart = week?.start ?? today
+        let weekEnd = week?.end ?? now
         let thisWeek = perDay
-            .filter { $0.key >= weekStart }
+            .filter { $0.key >= weekStart && $0.key < weekEnd }
             .values
             .reduce(0, +)
 
         // The best day, and nil rather than zero when there is no best day: a
         // personal record of nothing is worse than no line at all.
-        let best = perDay.max { $0.value < $1.value }
+        let best = perDay.max {
+            $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value
+        }
 
         return ListeningStats(
             currentStreak: current,
@@ -187,27 +242,31 @@ public struct SessionStore: Sendable {
         )
     }
 
-    /// Sessions for one day, newest first, for the history detail.
+    /// Closed sessions overlapping a day, newest first. Dates and duration are
+    /// clipped to that day and `now`; book offsets retain the original session's
+    /// values because seeks and speed changes make interpolation unreliable.
     ///
     /// Scoped the same way `stats(sectionID:...)` is, and for the same reason
     /// — see its doc comment.
     public func sessions(
-        on day: Date, sectionID: String?, calendar: Calendar = .current
+        on day: Date, sectionID: String?, now: Date = Date(), calendar: Calendar = .current
     ) throws -> [SessionSummary] {
         guard let sectionID else { return [] }
 
-        let start = calendar.startOfDay(for: day)
-        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        guard let interval = calendar.dateInterval(of: .day, for: day) else { return [] }
+        let start = interval.start
+        let end = min(interval.end, now)
+        guard start < end else { return [] }
 
         return try database.writer.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT listening_session.*, book.title AS book_title, book.thumb AS book_thumb
                 FROM listening_session
                 LEFT JOIN book ON book.rating_key = listening_session.book_rating_key
-                WHERE started_at >= ? AND started_at < ? AND ended_at IS NOT NULL
-                  AND listening_session.library_section_id = ?
-                ORDER BY started_at DESC
-                """, arguments: [start, end, sectionID])
+                WHERE started_at < ? AND ended_at > ?
+                  AND ended_at > started_at AND listening_session.library_section_id = ?
+                ORDER BY started_at DESC, listening_session.id ASC
+                """, arguments: [end, start, sectionID])
             .compactMap { row in
                 guard let started: Date = row["started_at"], let ended: Date = row["ended_at"] else {
                     return nil
@@ -217,8 +276,8 @@ public struct SessionStore: Sendable {
                     bookRatingKey: row["book_rating_key"],
                     bookTitle: row["book_title"] ?? "Unknown book",
                     bookThumb: row["book_thumb"],
-                    startedAt: started,
-                    endedAt: ended,
+                    startedAt: max(started, start),
+                    endedAt: min(ended, end),
                     startMs: row["start_ms"] ?? 0,
                     endMs: row["end_ms"] ?? 0
                 )
@@ -232,7 +291,7 @@ public struct ListeningStats: Sendable, Equatable {
     public let longestStreak: Int
     public let thisWeekSeconds: Int
 
-    /// Everything ever recorded on this device.
+    /// Closed listening time in the selected library, including synced sessions.
     ///
     /// Worth stating plainly on a history screen, which otherwise only ever
     /// shows a week: after a few months the interesting number is not what
@@ -287,16 +346,33 @@ public struct ListeningStats: Sendable, Equatable {
         self.secondsPerDay = secondsPerDay
     }
 
+    /// The current calendar week's days, including empty/future days. The
+    /// history chart and its per-day average use the same week as the total.
+    public func weekDays(now: Date = Date(), calendar: Calendar = .current) -> [(day: Date, seconds: Int)] {
+        guard let week = calendar.dateInterval(of: .weekOfYear, for: now) else { return [] }
+        var days: [(day: Date, seconds: Int)] = []
+        var day = week.start
+        while day < week.end {
+            days.append((day, day <= now ? secondsPerDay[day] ?? 0 : 0))
+            guard let next = calendar.dateInterval(of: .day, for: day)?.end, next > day else { break }
+            day = next
+        }
+        return days
+    }
+
     /// Seconds listened on each of the last `count` days, oldest first.
     public func recentDays(_ count: Int, now: Date = Date(), calendar: Calendar = .current) -> [(day: Date, seconds: Int)] {
+        guard count > 0 else { return [] }
         let today = calendar.startOfDay(for: now)
         return (0..<count).reversed().map { offset in
-            let day = calendar.date(byAdding: .day, value: -offset, to: today)!
+            let day = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -offset, to: today)!)
             return (day, secondsPerDay[day] ?? 0)
         }
     }
 }
 
+/// A saved session's contribution to the requested day. Time bounds are clipped
+/// for display; book offsets describe the original session and are not inferred.
 public struct SessionSummary: Sendable, Hashable, Identifiable {
     public let id: String
     public let bookRatingKey: String
@@ -307,7 +383,7 @@ public struct SessionSummary: Sendable, Hashable, Identifiable {
     public let startMs: Int
     public let endMs: Int
 
-    public var seconds: Int { max(0, Int(endedAt.timeIntervalSince(startedAt))) }
+    public var seconds: Int { max(0, Int((endedAt.timeIntervalSince(startedAt) * 1000).rounded()) / 1000) }
 }
 
 private final class ActiveSession: @unchecked Sendable {

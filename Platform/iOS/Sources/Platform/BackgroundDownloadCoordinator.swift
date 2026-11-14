@@ -188,8 +188,8 @@ public final class BackgroundDownloadCoordinator {
         let urls = Dictionary(segments.map { ($0.partCacheKey, urlForSegment($0)) },
                               uniquingKeysWith: { first, _ in first })
         transfers.enqueue(keys: segments.map(\.partCacheKey)) { [weak self] key in
-            guard let self, (try? self.store.record(partCacheKey: key)) != nil,
-                  self.localURL(forPartCacheKey: key) == nil, let url = urls[key] else { return }
+            guard let self, let record = try? self.store.record(partCacheKey: key),
+                  !record.requiresVerification, self.localURL(forPartCacheKey: key) == nil, let url = urls[key] else { return }
             let task = self.session.downloadTask(with: url)
             task.taskDescription = key
             self.gate.register(id: task.taskIdentifier, key: key)
@@ -263,7 +263,17 @@ public final class BackgroundDownloadCoordinator {
     /// identifier, which is why constructing this at launch matters even when
     /// nothing is being downloaded right now.
     public func resumeAfterLaunch() {
-        session.getAllTasks { _ in }
+        let store = self.store
+        session.getAllTasks { tasks in
+            for task in tasks {
+                guard let key = task.taskDescription,
+                      let record = try? store.record(partCacheKey: key),
+                      !record.requiresVerification else {
+                    task.cancel()
+                    continue
+                }
+            }
+        }
     }
 }
 
